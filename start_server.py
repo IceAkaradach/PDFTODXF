@@ -28,65 +28,68 @@ def find_page_height(data_bytes):
     return 841.89  # A4 default
 
 def extract_flate_streams(data_bytes):
-    """Find and decompress all FlateDecode streams from PDF binary."""
+    """Find and decompress all FlateDecode streams from PDF binary safely and robustly."""
     streams = []
-    i = 0
+    seen_starts = set()
     b = data_bytes
     n = len(b)
-
-    # Search for FlateDecode streams
-    pat_filter = b'/Filter /FlateDecode'
-    pat_filter2 = b'/Filter/FlateDecode'
     pat_stream = b'stream'
+    p = 0
+    while True:
+        spos = b.find(pat_stream, p)
+        if spos == -1:
+            break
+        p = spos + 6
 
-    positions = []
-    seen_starts = set()
-    for pat in [pat_filter, pat_filter2]:
-        p = 0
-        while True:
-            pos = b.find(pat, p)
-            if pos == -1:
-                break
-            positions.append(pos)
-            p = pos + 1
+        # Check dictionary preceding stream
+        header = b[max(0, spos - 512):spos]
+        if b'/Filter' in header and (b'/FlateDecode' in header or b'/Fl' in header):
+            dstart = spos + 6
+            if dstart < n and b[dstart] == 13: dstart += 1  # \r
+            if dstart < n and b[dstart] == 10: dstart += 1  # \n
 
-    positions.sort()
+            if dstart in seen_starts:
+                continue
+            seen_starts.add(dstart)
 
-    for fpos in positions:
-        # Find the 'stream' keyword after this /Filter
-        spos = b.find(pat_stream, fpos)
-        if spos == -1 or spos - fpos > 512:
-            continue
-        # Skip 'stream' + newline
-        dstart = spos + 6
-        if dstart < n and b[dstart] == 13: dstart += 1  # \r
-        if dstart < n and b[dstart] == 10: dstart += 1  # \n
+            text = None
+            # Strategy 1: zlib.decompressobj() automatically handles zlib stream boundaries cleanly
+            try:
+                d = zlib.decompressobj()
+                dec = d.decompress(b[dstart:])
+                text = dec.decode('latin-1', errors='replace')
+            except Exception:
+                pass
 
-        # Deduplicate: skip if we already processed this stream start
-        if dstart in seen_starts:
-            continue
-        seen_starts.add(dstart)
+            # Strategy 2: If /Length is specified in header
+            if not text:
+                m_len = re.search(rb'/Length\s+(\d+)', header)
+                if m_len:
+                    slen = int(m_len.group(1))
+                    try:
+                        dec = zlib.decompress(b[dstart:dstart + slen])
+                        text = dec.decode('latin-1', errors='replace')
+                    except Exception:
+                        pass
 
-        # Find 'endstream'
-        epos = b.find(b'endstream', dstart)
-        if epos == -1 or epos <= dstart:
-            continue
+            # Strategy 3: Find endstream without stripping 0x20 space
+            if not text:
+                epos = b.find(b'endstream', dstart)
+                if epos > dstart:
+                    raw = b[dstart:epos]
+                    while raw and raw[-1] in (10, 13):  # only strip newline, NEVER space 0x20
+                        raw = raw[:-1]
+                    try:
+                        dec = zlib.decompress(raw)
+                        text = dec.decode('latin-1', errors='replace')
+                    except Exception:
+                        pass
 
-        raw = b[dstart:epos]
-        # Trim trailing whitespace
-        while raw and raw[-1] in (10, 13, 32):
-            raw = raw[:-1]
+            if text and any(op in text for op in [' m\n', ' l\n', ' c\n', ' m\r', ' l\r', '\nm\n', '\nm ']):
+                streams.append((spos, text))
 
-        try:
-            dec = zlib.decompress(raw)
-            text = dec.decode('latin-1', errors='replace')
-            # Check it's a content stream (has path operators)
-            if any(op in text for op in [' m\n', ' l\n', ' c\n', ' m\r', ' l\r', '\nm\n', '\nm ']):
-                streams.append(text)
-        except Exception:
-            pass
-
-    return streams
+    streams.sort(key=lambda s: s[0])
+    return [s[1] for s in streams]
 
 def tokenize(text):
     """Tokenize PDF content stream into numbers and operators."""
@@ -214,7 +217,7 @@ def parse_content_stream(text, scale, bezier_steps, do_circle, do_layer):
     """Parse PDF content stream and return list of DXF entities."""
     tokens = tokenize(text)
     entities = []
-    layer_map = {}  # color_key -> layer_name
+    layer_map = {}  # color_key -> dict(name=..., rgb=...)
 
     ctm = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
     ctm_stack = []
@@ -228,10 +231,11 @@ def parse_content_stream(text, scale, bezier_steps, do_circle, do_layer):
     def get_layer(r, g, b):
         if not do_layer:
             return '0'
-        key = f'{int(r*255)}_{int(g*255)}_{int(b*255)}'
+        ir, ig, ib = int(round(r * 255)), int(round(g * 255)), int(round(b * 255))
+        key = f'{ir}_{ig}_{ib}'
         if key not in layer_map:
-            layer_map[key] = f'L{len(layer_map)+1}'
-        return layer_map[key]
+            layer_map[key] = {'name': f'L{len(layer_map)+1}', 'rgb': (ir, ig, ib)}
+        return layer_map[key]['name']
 
     def tx(x, y):
         tx_x, tx_y = apply_ctm(ctm, x, y)
@@ -385,6 +389,29 @@ def parse_content_stream(text, scale, bezier_steps, do_circle, do_layer):
 
     return entities, layer_map
 
+def rgb_to_best_aci(r, g, b):
+    """Map RGB to closest AutoCAD standard Color Index (ACI 1-7)."""
+    if r < 35 and g < 35 and b < 35:
+        return 7  # Dark/Black -> AutoCAD White (ACI 7) for dark background visibility
+    if r > 230 and g > 230 and b > 230:
+        return 7
+    std_colors = [
+        (1, 255, 0, 0),     # Red
+        (2, 255, 255, 0),   # Yellow
+        (3, 0, 255, 0),     # Green
+        (4, 0, 255, 255),   # Cyan
+        (5, 0, 0, 255),     # Blue
+        (6, 255, 0, 255),   # Magenta
+    ]
+    best_aci = 7
+    best_d = float('inf')
+    for aci, cr, cg, cb in std_colors:
+        d = (r - cr)**2 + (g - cg)**2 + (b - cb)**2
+        if d < best_d:
+            best_d = d
+            best_aci = aci
+    return best_aci
+
 def build_dxf(all_entities, layer_map, unit_code):
     """Build AutoCAD-compatible DXF using ezdxf."""
     unit_factors = {
@@ -399,10 +426,20 @@ def build_dxf(all_entities, layer_map, unit_code):
     doc.header['$INSUNITS'] = insunits
     doc.header['$MEASUREMENT'] = 1 if insunits in (4, 5, 6) else 0
 
-    palette = [1, 2, 3, 4, 5, 6, 7, 30, 40, 50, 70, 80, 100, 120, 140, 160, 180, 200, 220, 240]
-    for idx, name in enumerate(layer_map.values()):
+    for info in layer_map.values():
+        if isinstance(info, dict):
+            name = info['name']
+            r, g, b = info['rgb']
+        else:
+            name = str(info)
+            r, g, b = (128, 128, 128)
+
         if name not in doc.layers:
-            doc.layers.add(name=name, color=palette[idx % len(palette)])
+            aci = rgb_to_best_aci(r, g, b)
+            if r < 35 and g < 35 and b < 35:
+                doc.layers.add(name=name, color=7)
+            else:
+                doc.layers.add(name=name, color=aci, true_color=ezdxf.colors.rgb2int((r, g, b)))
 
     msp = doc.modelspace()
     num_circles = 0
