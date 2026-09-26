@@ -445,8 +445,9 @@ def build_dxf(all_entities, layer_map, unit_code):
     doc.write(stream)
     return stream.getvalue(), num_polylines, num_circles
 
-def apply_grid_snap(entities, unit_code, grid_snap, scale=1.0):
-    """Snap circle centers to exact grid pitch (removes PDF floating point noise e.g. 250.03 -> 250.00)."""
+def align_and_calibrate_grid(entities, unit_code, grid_snap, scale=1.0):
+    """Rigidly calibrates scale, aligns origin to (0,0), and regularizes hole grid pitch
+    so dimensions in AutoCAD become exactly 250.00 and 125.00 without any contour distortion."""
     if grid_snap <= 0.0:
         return entities
 
@@ -457,37 +458,85 @@ def apply_grid_snap(entities, unit_code, grid_snap, scale=1.0):
         2: 1.0 / 72.0,    # in
     }
     uf = unit_factors.get(int(unit_code), 25.4 / 72.0)
-    step = float(grid_snap) * scale
+    target_pitch = float(grid_snap) * scale * 2.0  # e.g. 1.25 * 2 = 2.5 mm
 
     circles = [e for e in entities if e[0] == 'CIRCLE']
     if len(circles) < 3:
         return entities
 
+    from collections import defaultdict
     import statistics
-    xs = [c[2] * uf for c in circles]
-    ys = [c[3] * uf for c in circles]
 
-    med_x = statistics.median([x % step for x in xs])
-    med_y = statistics.median([y % step for y in ys])
-    tol = step * 0.25  # Only snap circles close to grid pitch
+    # 1. Pitch detection: measure average horizontal distance between circles in rows
+    rows = defaultdict(list)
+    for c in circles:
+        rows[round(c[3] * uf, 2)].append(c[2] * uf)
 
-    new_entities = []
-    for ent in entities:
-        if ent[0] == 'CIRCLE':
-            typ, layer, cx, cy, r = ent
-            x_val = cx * uf
-            y_val = cy * uf
-            sx = med_x + round((x_val - med_x) / step) * step
-            sy = med_y + round((y_val - med_y) / step) * step
-            if abs(x_val - sx) <= tol:
-                x_val = sx
-            if abs(y_val - sy) <= tol:
-                y_val = sy
-            new_entities.append((typ, layer, x_val / uf, y_val / uf, r))
+    best_row = max(rows.values(), key=len)
+    best_row.sort()
+    dxs = [best_row[i+1] - best_row[i] for i in range(len(best_row)-1)
+           if 0.5 * target_pitch < best_row[i+1] - best_row[i] < 1.5 * target_pitch]
+    
+    if dxs:
+        avg_pitch = sum(dxs) / len(dxs)
+        calib_scale = target_pitch / avg_pitch
+    else:
+        calib_scale = 1.0
+
+    # 2. Shift origin to (0, 0)
+    all_xs = [e[2] * uf * calib_scale for e in entities if e[0] == 'CIRCLE']
+    all_ys = [e[3] * uf * calib_scale for e in entities if e[0] == 'CIRCLE']
+    for e in entities:
+        if e[0] == 'POLY':
+            for p in e[2]:
+                all_xs.append(p[0] * uf * calib_scale)
+                all_ys.append(p[1] * uf * calib_scale)
+
+    origin_x = min(all_xs)
+    origin_y = min(all_ys)
+
+    # 3. Regularize circle grid (rows and columns)
+    step_y = float(grid_snap) * scale
+    step_x = step_y * 2.0  # e.g. 2.5 mm
+
+    c_by_y = defaultdict(list)
+    for e in entities:
+        if e[0] == 'CIRCLE':
+            y_grid = round((e[3] * uf * calib_scale - origin_y) / step_y) * step_y
+            c_by_y[y_grid].append(e)
+
+    final_entities = []
+    for expected_y, clist in c_by_y.items():
+        if len(clist) >= 3:
+            clist.sort(key=lambda c: c[2])
+            first_x = clist[0][2] * uf * calib_scale - origin_x
+            base_x = round(first_x / step_y) * step_y
+            for c in clist:
+                typ, layer, cx, cy, r = c
+                curr_x = cx * uf * calib_scale - origin_x
+                idx = round((curr_x - base_x) / step_x)
+                reg_x = base_x + idx * step_x
+                reg_y = expected_y
+                final_entities.append((typ, layer, reg_x / uf, reg_y / uf, r * calib_scale))
         else:
-            new_entities.append(ent)
+            for c in clist:
+                typ, layer, cx, cy, r = c
+                curr_x = cx * uf * calib_scale - origin_x
+                curr_y = cy * uf * calib_scale - origin_y
+                final_entities.append((typ, layer, curr_x / uf, curr_y / uf, r * calib_scale))
 
-    return new_entities
+    # 4. Rigidly transform polylines without ANY distortion
+    for e in entities:
+        if e[0] == 'POLY':
+            typ, layer, pts = e
+            new_pts = []
+            for px, py in pts:
+                new_px = (px * uf * calib_scale - origin_x) / uf
+                new_py = (py * uf * calib_scale - origin_y) / uf
+                new_pts.append((new_px, new_py))
+            final_entities.append((typ, layer, new_pts))
+
+    return final_entities
 
 def convert_pdf_to_dxf(pdf_bytes, unit_code=1, scale=1.0, bezier_steps=12,
                         do_circle=True, do_layer=True, grid_snap=0.0):
@@ -506,7 +555,7 @@ def convert_pdf_to_dxf(pdf_bytes, unit_code=1, scale=1.0, bezier_steps=12,
     )
 
     if grid_snap > 0.0:
-        all_entities = apply_grid_snap(all_entities, unit_code, grid_snap, scale)
+        all_entities = align_and_calibrate_grid(all_entities, unit_code, grid_snap, scale)
 
     return build_dxf(all_entities, all_layer_map, unit_code)
 
