@@ -3,18 +3,28 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PDF to DXF Converter</title>
+  <title>PDF to DXF Converter (AutoCAD Standard)</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="pako.min.js"></script>
+  <script>
+    // Fallback CDN if local pako.min.js is not loaded
+    if (typeof pako === 'undefined') {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js';
+      document.head.appendChild(s);
+    }
+  </script>
   <style>
     :root{--bg:#0a0a12;--card:#1a1a2e;--accent:#7c3aed;--accent2:#4f46e5;--accent3:#06b6d4;--success:#10b981;--error:#ef4444;--text:#f1f5f9;--muted:#94a3b8;--border:rgba(255,255,255,0.08);--glow:rgba(124,58,237,0.35);}
     *{margin:0;padding:0;box-sizing:border-box;}
     body{font-family:Inter,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;}
     body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;background:radial-gradient(ellipse 80% 60% at 20% 20%,rgba(124,58,237,0.12),transparent 60%),radial-gradient(ellipse 60% 50% at 80% 80%,rgba(6,182,212,0.08),transparent 60%),repeating-linear-gradient(0deg,transparent,transparent 49px,rgba(255,255,255,0.018) 50px),repeating-linear-gradient(90deg,transparent,transparent 49px,rgba(255,255,255,0.018) 50px);}
     .wrap{position:relative;z-index:1;max-width:1000px;margin:0 auto;padding:2rem 1.5rem 5rem;}
-    .hdr{text-align:center;margin-bottom:3rem;padding-top:2rem;}
-    .badge{display:inline-flex;align-items:center;gap:.5rem;margin-bottom:1.5rem;background:rgba(124,58,237,0.15);border:1px solid rgba(124,58,237,0.3);border-radius:999px;padding:.35rem 1rem;font-size:.75rem;font-weight:600;color:#a78bfa;letter-spacing:.05em;text-transform:uppercase;}
+    .hdr{text-align:center;margin-bottom:2.5rem;padding-top:1.5rem;}
+    .badge{display:inline-flex;align-items:center;gap:.5rem;margin-bottom:1.2rem;background:rgba(124,58,237,0.15);border:1px solid rgba(124,58,237,0.3);border-radius:999px;padding:.35rem 1rem;font-size:.75rem;font-weight:600;color:#a78bfa;letter-spacing:.05em;text-transform:uppercase;}
+    .badge-os{background:rgba(16,185,129,0.15);border-color:rgba(16,185,129,0.3);color:#34d399;margin-left:.5rem;}
     .hdr h1{font-size:clamp(2.2rem,5vw,3.5rem);font-weight:800;line-height:1.15;margin-bottom:.75rem;background:linear-gradient(135deg,#e2d9f3,#a78bfa 40%,#38bdf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
-    .hdr p{color:var(--muted);font-size:.95rem;max-width:540px;margin:0 auto;line-height:1.65;}
+    .hdr p{color:var(--muted);font-size:.95rem;max-width:580px;margin:0 auto;line-height:1.65;}
     .drop{position:relative;border:2px dashed rgba(124,58,237,0.4);border-radius:20px;background:var(--card);padding:3.5rem 2rem;text-align:center;cursor:pointer;transition:all .3s;margin-bottom:1.5rem;overflow:hidden;}
     .drop::before{content:"";position:absolute;inset:0;background:radial-gradient(ellipse at center,rgba(124,58,237,0.06),transparent 70%);}
     .drop:hover,.drop.over{border-color:var(--accent);transform:translateY(-2px);box-shadow:0 0 40px var(--glow),inset 0 0 30px rgba(124,58,237,0.05);}
@@ -58,45 +68,48 @@
     .clrbtn{padding:1rem 1.5rem;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.25);border-radius:14px;color:#f87171;font-size:.9rem;font-weight:600;cursor:pointer;transition:all .2s;}
     .clrbtn:hover{background:rgba(239,68,68,0.18);border-color:rgba(239,68,68,0.5);}
     .prgsec{margin-bottom:1.5rem;}
-    .prgwrap{height:6px;background:rgba(255,255,255,0.06);border-radius:99px;overflow:hidden;margin-bottom:.5rem;}
-    .prgbar{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent3));border-radius:99px;width:0%;transition:width .4s ease;box-shadow:0 0 12px rgba(124,58,237,0.6);}
+    .prgwrap{height:8px;background:rgba(255,255,255,0.08);border-radius:999px;overflow:hidden;margin-bottom:.5rem;}
+    .prgbar{height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--accent3));border-radius:999px;transition:width .3s ease;}
     .prgtxt{font-size:.8rem;color:var(--muted);text-align:right;}
-    .stats{display:flex;gap:1rem;margin-top:1.5rem;flex-wrap:wrap;}
-    .stc{flex:1;min-width:130px;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:1rem 1.25rem;text-align:center;}
-    .stv{font-size:1.5rem;font-weight:800;background:linear-gradient(135deg,#a78bfa,#38bdf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
-    .stl{font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-top:.2rem;}
-    .rlist{display:flex;flex-direction:column;gap:.75rem;}
-    .rcard{display:flex;align-items:center;gap:1rem;background:rgba(16,185,129,0.06);border:1px solid rgba(16,185,129,0.2);border-radius:14px;padding:1rem 1.25rem;animation:sIn .3s ease;}
-    .rcard .ri{flex:1;min-width:0;}
-    .rcard .rn{font-weight:600;font-size:.925rem;color:#6ee7b7;}
-    .rcard .rm{font-size:.75rem;color:var(--muted);margin-top:.2rem;}
-    .dlbtn{display:flex;align-items:center;gap:.5rem;padding:.5rem 1.1rem;background:linear-gradient(135deg,var(--success),#059669);border:none;border-radius:10px;color:#fff;font-size:.8rem;font-weight:700;cursor:pointer;text-decoration:none;transition:all .2s;box-shadow:0 4px 15px rgba(16,185,129,0.3);white-space:nowrap;}
-    .dlbtn:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(16,185,129,0.45);}
-    .lp{margin-top:2rem;background:rgba(0,0,0,0.4);border:1px solid var(--border);border-radius:14px;overflow:hidden;}
-    .lhdr{display:flex;align-items:center;justify-content:space-between;padding:.75rem 1.25rem;background:rgba(255,255,255,0.03);border-bottom:1px solid var(--border);cursor:pointer;}
-    .lhdr span{font-size:.8rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;}
-    .lbody{max-height:200px;overflow-y:auto;padding:.75rem 1.25rem;font-family:monospace;font-size:.78rem;line-height:1.6;display:none;}
+    .stats{display:flex;gap:1rem;margin-bottom:1.5rem;}
+    .stc{flex:1;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:1.2rem;text-align:center;}
+    .stv{font-size:1.8rem;font-weight:800;background:linear-gradient(135deg,#fff,#a78bfa);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+    .stl{font-size:.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-top:.25rem;}
+    .rlist{display:flex;flex-direction:column;gap:.75rem;margin-bottom:1.5rem;}
+    .rcard{display:flex;align-items:center;gap:1rem;background:linear-gradient(135deg,rgba(16,185,129,0.06),var(--card));border:1px solid rgba(16,185,129,0.25);border-radius:16px;padding:1.25rem 1.5rem;animation:sIn .3s ease;}
+    .ri{flex:1;min-width:0;}
+    .rn{font-weight:700;font-size:1rem;margin-bottom:.25rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .rm{font-size:.8rem;color:var(--muted);}
+    .dlbtn{display:inline-flex;align-items:center;gap:.4rem;padding:.65rem 1.25rem;background:linear-gradient(135deg,#10b981,#059669);border:none;border-radius:10px;color:#fff;font-size:.875rem;font-weight:700;cursor:pointer;text-decoration:none;transition:all .2s;box-shadow:0 4px 15px rgba(16,185,129,0.3);}
+    .dlbtn:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(16,185,129,0.5);}
+    .tipbox{margin-top:1.5rem;padding:1rem 1.25rem;background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.2);border-radius:12px;font-size:.825rem;color:#c4b5fd;line-height:1.6;}
+    .lp{background:var(--card);border:1px solid var(--border);border-radius:14px;overflow:hidden;margin-top:1.5rem;}
+    .lhdr{display:flex;justify-content:space-between;align-items:center;padding:.75rem 1.25rem;font-size:.8rem;color:var(--muted);cursor:pointer;font-weight:600;}
+    .lhdr:hover{color:var(--text);}
+    .lbody{display:none;padding:1rem 1.25rem;max-height:220px;overflow-y:auto;font-family:monospace;font-size:.78rem;line-height:1.7;background:rgba(0,0,0,0.3);border-top:1px solid var(--border);}
     .lbody.open{display:block;}
-    .li{color:#94a3b8;}.lok{color:#6ee7b7;}.lwn{color:#fbbf24;}.lerr{color:#f87171;}
+    .li{color:var(--muted);}
+    .lok{color:var(--success);}
+    .lerr{color:var(--error);}
+    .sp{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,0.3);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite;vertical-align:middle;margin-right:.4rem;}
     @keyframes spin{to{transform:rotate(360deg);}}
-    .sp{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,0.3);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite;vertical-align:middle;margin-right:6px;}
-    ::-webkit-scrollbar{width:4px;}::-webkit-scrollbar-track{background:transparent;}::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:99px;}
   </style>
 </head>
 <body>
 <div class="wrap">
   <div class="hdr">
-    <div class="badge">&#9889; Python PDF &rarr; DXF</div>
-    <h1>PDF to DXF<br>Converter</h1>
-    <p>แปลง PDF Vector (Adobe Illustrator, CAD) เป็น DXF<br>รองรับ Polyline, Circle, Bezier &mdash; ทำงานด้วย Python (100% Accurate)</p>
+    <div class="badge">&#9881; AutoCAD R2000 Compatible</div>
+    <div class="badge badge-os">&#9889; Works on Any OS (No Python Required)</div>
+    <h1>PDF &rarr; DXF Converter</h1>
+    <p>แปลงไฟล์ PDF แบบร่างและ Vector เป็น DXF สำหรับ AutoCAD โดยอัตโนมัติ รวดเร็ว แม่นยำ ไม่ต้องติดตั้งโปรแกรม</p>
   </div>
 
-  <div class="drop" id="dz">
+  <div class="drop" id="drop" onclick="document.getElementById('fi').click()">
     <div class="dicon">&#128196;</div>
-    <h2>ลาก PDF มาวางที่นี่</h2>
-    <p>หรือคลิกปุ่มด้านล่างเพื่อเลือกไฟล์</p>
-    <button class="brwbtn" onclick="document.getElementById('fi').click()">&#128194; เลือกไฟล์ PDF</button>
-    <input type="file" id="fi" accept=".pdf" multiple>
+    <h2>ลากไฟล์ PDF มาวางที่นี่</h2>
+    <p>หรือคลิกเพื่อเลือกไฟล์จากคอมพิวเตอร์ของคุณ (รองรับทีละหลายไฟล์)</p>
+    <button class="brwbtn" onclick="event.stopPropagation();document.getElementById('fi').click()">เลือกไฟล์ PDF</button>
+    <input type="file" id="fi" accept=".pdf" multiple onchange="onFiles(this.files)">
   </div>
 
   <div class="flist" id="flist"></div>
@@ -157,9 +170,13 @@
 
   <div class="rlist" id="rlist"></div>
 
+  <div class="tipbox" id="tipbox" style="display:none">
+    <strong>💡 คำแนะนำเมื่อเปิดใน AutoCAD:</strong> ไฟล์ DXF ถูกตั้งค่ามุมมองกึ่งกลางชิ้นงานไว้ให้แล้ว หากเปิดขึ้นมาแล้วมองไม่เห็นวัตถุ ให้พิมพ์คำสั่ง <code>Z</code> แล้วกด [Enter] จากนั้นพิมพ์ <code>E</code> แล้วกด [Enter] (คำสั่ง <em>Zoom Extents</em>) หรือดับเบิลคลิกล้อเลื่อนเมาส์ 2 ครั้ง
+  </div>
+
   <div class="lp" id="lp" style="display:none">
     <div class="lhdr" onclick="toggleLog()">
-      <span>&#128203; Log</span>
+      <span>&#128220; รายละเอียดการทำงาน (Log)</span>
       <span id="ltic">&#9660;</span>
     </div>
     <div class="lbody" id="lbody"></div>
@@ -167,16 +184,536 @@
 </div>
 
 <script>
-let files = [], tPL = 0, tCI = 0;
+// ─── Pure Client-Side Conversion Engine (Runs 100% in Browser) ───────────────
 
-const dz = document.getElementById('dz');
-dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('over'); });
-dz.addEventListener('dragleave', () => dz.classList.remove('over'));
-dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('over'); addFiles([...e.dataTransfer.files]); });
-document.getElementById('fi').addEventListener('change', e => { addFiles([...e.target.files]); e.target.value = ''; });
+async function decompressFlate(raw) {
+  if (typeof pako !== 'undefined' && pako.inflate) {
+    try { return pako.inflate(raw); } catch(e) {}
+  }
+  try {
+    const ds = new DecompressionStream('deflate');
+    const writer = ds.writable.getWriter();
+    writer.write(raw); writer.close();
+    const resp = new Response(ds.readable);
+    return new Uint8Array(await resp.arrayBuffer());
+  } catch(e) {
+    const ds = new DecompressionStream('deflate-raw');
+    const writer = ds.writable.getWriter();
+    writer.write(raw); writer.close();
+    const resp = new Response(ds.readable);
+    return new Uint8Array(await resp.arrayBuffer());
+  }
+}
 
-function addFiles(nf) {
-  nf.filter(f => f.name.toLowerCase().endsWith('.pdf')).forEach(f => {
+async function extractFlateStreams(uint8) {
+  const streams = [];
+  const n = uint8.length;
+  const pFilter = [47, 70, 105, 108, 116, 101, 114]; // /Filter
+  const pFlate = [70, 108, 97, 116, 101, 68, 101, 99, 111, 100, 101]; // FlateDecode
+  const pStream = [115, 116, 114, 101, 97, 109]; // stream
+  const pEnd = [101, 110, 100, 115, 116, 114, 101, 97, 109]; // endstream
+
+  function findSeq(seq, start) {
+    const sn = seq.length;
+    for (let i = start; i <= n - sn; i++) {
+      let m = true;
+      for (let j = 0; j < sn; j++) {
+        if (uint8[i + j] !== seq[j]) { m = false; break; }
+      }
+      if (m) return i;
+    }
+    return -1;
+  }
+
+  let p = 0;
+  const positions = [];
+  while (true) {
+    const pos = findSeq(pFlate, p);
+    if (pos === -1) break;
+    positions.push(pos);
+    p = pos + 1;
+  }
+
+  const seen = new Set();
+  for (const fpos of positions) {
+    const spos = findSeq(pStream, fpos);
+    if (spos === -1 || spos - fpos > 512) continue;
+    let dstart = spos + 6;
+    if (dstart < n && uint8[dstart] === 13) dstart++;
+    if (dstart < n && uint8[dstart] === 10) dstart++;
+    if (seen.has(dstart)) continue;
+    seen.add(dstart);
+
+    const epos = findSeq(pEnd, dstart);
+    if (epos === -1 || epos <= dstart) continue;
+
+    let dend = epos;
+    while (dend > dstart && (uint8[dend - 1] === 10 || uint8[dend - 1] === 13 || uint8[dend - 1] === 32)) {
+      dend--;
+    }
+
+    const raw = uint8.subarray(dstart, dend);
+    try {
+      const dec = await decompressFlate(raw);
+      let text = '';
+      const chunk = 8192;
+      for (let c = 0; c < dec.length; c += chunk) {
+        text += String.fromCharCode.apply(null, dec.subarray(c, Math.min(c + chunk, dec.length)));
+      }
+      if ([' m\n', ' l\n', ' c\n', ' m\r', ' l\r', '\nm\n', '\nm '].some(op => text.includes(op))) {
+        streams.push(text);
+      }
+    } catch(e) {}
+  }
+  return streams;
+}
+
+function tokenize(text) {
+  const tokens = [];
+  const n = text.length;
+  let i = 0;
+  while (i < n) {
+    const c = text[i];
+    if (c === ' ' || c === '\t' || c === '\r' || c === '\n') { i++; continue; }
+    if (c === '%') {
+      while (i < n && text[i] !== '\n') i++;
+      continue;
+    }
+    if ((c >= '0' && c <= '9') || c === '.' || c === '-' || (c === '+' && i + 1 < n && ((text[i+1] >= '0' && text[i+1] <= '9') || text[i+1] === '.'))) {
+      let j = i;
+      if (text[j] === '+' || text[j] === '-') j++;
+      while (j < n && ((text[j] >= '0' && text[j] <= '9') || text[j] === '.')) j++;
+      const num = parseFloat(text.slice(i, j));
+      if (!isNaN(num)) tokens.push(['n', num]);
+      i = j;
+      continue;
+    }
+    if (c === '(') {
+      let depth = 1; i++;
+      while (i < n && depth > 0) {
+        if (text[i] === '\\') { i += 2; continue; }
+        if (text[i] === '(') depth++;
+        else if (text[i] === ')') depth--;
+        i++;
+      }
+      continue;
+    }
+    if (c === '<') {
+      if (i + 1 < n && text[i + 1] === '<') {
+        let depth = 1; i += 2;
+        while (i < n && depth > 0) {
+          if (text[i] === '<' && i + 1 < n && text[i + 1] === '<') { depth++; i += 2; }
+          else if (text[i] === '>' && i + 1 < n && text[i + 1] === '>') { depth--; i += 2; }
+          else i++;
+        }
+      } else {
+        while (i < n && text[i] !== '>') i++;
+        i++;
+      }
+      continue;
+    }
+    if (c === '[' || c === ']') { i++; continue; }
+    if (c === '/') {
+      let j = i + 1;
+      while (j < n && !' \t\r\n/[]<>()'.includes(text[j])) j++;
+      tokens.push(['name', text.slice(i, j)]);
+      i = j;
+      continue;
+    }
+    let j = i;
+    while (j < n && !' \t\r\n/[]<>()%'.includes(text[j])) j++;
+    tokens.push(['op', text.slice(i, j)]);
+    i = j;
+  }
+  return tokens;
+}
+
+function mulCtm(a, b) {
+  return [
+    a[0]*b[0] + a[1]*b[2],
+    a[0]*b[1] + a[1]*b[3],
+    a[2]*b[0] + a[3]*b[2],
+    a[2]*b[1] + a[3]*b[3],
+    a[4]*b[0] + a[5]*b[2] + b[4],
+    a[4]*b[1] + a[5]*b[3] + b[5],
+  ];
+}
+
+function applyCtm(ctm, x, y) {
+  return [
+    ctm[0]*x + ctm[2]*y + ctm[4],
+    ctm[1]*x + ctm[3]*y + ctm[5],
+  ];
+}
+
+function flattenBezier(p0, p1, p2, p3, steps = 12) {
+  const pts = [];
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const mt = 1 - t;
+    const x = mt**3 * p0[0] + 3 * mt**2 * t * p1[0] + 3 * mt * t**2 * p2[0] + t**3 * p3[0];
+    const y = mt**3 * p0[1] + 3 * mt**2 * t * p1[1] + 3 * mt * t**2 * p2[1] + t**3 * p3[1];
+    pts.push([x, y]);
+  }
+  return pts;
+}
+
+function tryCircle(pts) {
+  if (pts.length < 3) return null;
+  const xs = pts.map(p => p[0]);
+  const ys = pts.map(p => p[1]);
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minY = Math.min(...ys), maxY = Math.max(...ys);
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+  const rx = (maxX - minX) / 2;
+  const ry = (maxY - minY) / 2;
+  if (rx < 0.01 || ry < 0.01) return null;
+  if (Math.min(rx, ry) / Math.max(rx, ry) < 0.80) return null;
+  const r = (rx + ry) / 2;
+  for (const [x, y] of pts) {
+    const d = Math.hypot(x - cx, y - cy);
+    if (r > 0 && Math.abs(d - r) / r > 0.30) return null;
+  }
+  return [cx, cy, r];
+}
+
+function parseContentStream(text, scale = 1.0, bezierSteps = 12, doCircle = true, doLayer = true) {
+  const tokens = tokenize(text);
+  const entities = [];
+  const layerMap = {};
+
+  let ctm = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
+  const ctmStack = [];
+  let path = [];
+  let curX = 0, curY = 0;
+  let strokeColor = [0, 0, 0];
+  let fillColor = [0, 0, 0];
+  let stack = [];
+
+  function getLayer(r, g, b) {
+    if (!doLayer) return '0';
+    const key = `${Math.round(r * 255)}_${Math.round(g * 255)}_${Math.round(b * 255)}`;
+    if (!layerMap[key]) {
+      layerMap[key] = `L${Object.keys(layerMap).length + 1}`;
+    }
+    return layerMap[key];
+  }
+
+  function tx(x, y) {
+    const [txX, txY] = applyCtm(ctm, x, y);
+    return [txX * scale, txY * scale];
+  }
+
+  function finalizePath(isStroke) {
+    if (!path.length) return;
+    const color = isStroke ? strokeColor : fillColor;
+    const layer = getLayer(...color);
+
+    const allPts = [];
+    for (const seg of path) {
+      if (seg[0] === 'M' || seg[0] === 'L') allPts.push(tx(seg[1], seg[2]));
+      else if (seg[0] === 'C') allPts.push(tx(seg[5], seg[6]));
+    }
+
+    if (doCircle) {
+      const curveCount = path.filter(s => s[0] === 'C').length;
+      const moveCount = path.filter(s => s[0] === 'M').length;
+      if (curveCount >= 2 && curveCount <= 8 && moveCount === 1) {
+        const circ = tryCircle(allPts);
+        if (circ) {
+          entities.push({ type: 'CIRCLE', layer, cx: circ[0], cy: circ[1], r: circ[2] });
+          path = [];
+          return;
+        }
+      }
+    }
+
+    let polyPts = [];
+    let firstPt = null;
+    for (const seg of path) {
+      if (seg[0] === 'M') {
+        if (polyPts.length > 1) entities.push({ type: 'POLY', layer, pts: polyPts });
+        polyPts = [tx(seg[1], seg[2])];
+        firstPt = polyPts[0];
+      } else if (seg[0] === 'L') {
+        polyPts.push(tx(seg[1], seg[2]));
+      } else if (seg[0] === 'C') {
+        const prev = polyPts.length ? polyPts[polyPts.length - 1] : [0, 0];
+        const p1 = tx(seg[1], seg[2]);
+        const p2 = tx(seg[3], seg[4]);
+        const p3 = tx(seg[5], seg[6]);
+        const flat = flattenBezier(prev, p1, p2, p3, bezierSteps);
+        for (let k = 1; k < flat.length; k++) polyPts.push(flat[k]);
+      } else if (seg[0] === 'H') {
+        if (firstPt && polyPts.length) polyPts.push(firstPt);
+      }
+    }
+    if (polyPts.length > 1) {
+      entities.push({ type: 'POLY', layer, pts: polyPts });
+    }
+    path = [];
+  }
+
+  let i = 0;
+  const n = tokens.length;
+  while (i < n) {
+    const tok = tokens[i];
+    if (tok[0] === 'n') { stack.push(tok[1]); i++; continue; }
+    if (tok[0] !== 'op') { i++; continue; }
+
+    const op = tok[1];
+    if (op === 'q') {
+      ctmStack.push([...ctm]);
+    } else if (op === 'Q') {
+      if (ctmStack.length) ctm = ctmStack.pop();
+    } else if (op === 'cm') {
+      if (stack.length >= 6) {
+        const m = stack.slice(-6);
+        ctm = mulCtm(ctm, m);
+        stack = stack.slice(0, -6);
+      }
+    } else if (op === 'm') {
+      if (stack.length >= 2) {
+        curX = stack[stack.length - 2];
+        curY = stack[stack.length - 1];
+        path.push(['M', curX, curY]);
+        stack = stack.slice(0, -2);
+      }
+    } else if (op === 'l') {
+      if (stack.length >= 2) {
+        curX = stack[stack.length - 2];
+        curY = stack[stack.length - 1];
+        path.push(['L', curX, curY]);
+        stack = stack.slice(0, -2);
+      }
+    } else if (op === 'c') {
+      if (stack.length >= 6) {
+        const [x1, y1, x2, y2, x3, y3] = stack.slice(-6);
+        path.push(['C', x1, y1, x2, y2, x3, y3]);
+        curX = x3; curY = y3;
+        stack = stack.slice(0, -6);
+      }
+    } else if (op === 'v') {
+      if (stack.length >= 4) {
+        const [x2, y2, x3, y3] = stack.slice(-4);
+        path.push(['C', curX, curY, x2, y2, x3, y3]);
+        curX = x3; curY = y3;
+        stack = stack.slice(0, -4);
+      }
+    } else if (op === 'y') {
+      if (stack.length >= 4) {
+        const [x1, y1, x3, y3] = stack.slice(-4);
+        path.push(['C', x1, y1, x3, y3, x3, y3]);
+        curX = x3; curY = y3;
+        stack = stack.slice(0, -4);
+      }
+    } else if (op === 'h') {
+      path.push(['H']);
+    } else if (op === 'S') {
+      finalizePath(true);
+    } else if (op === 'f' || op === 'F' || op === 'f*') {
+      finalizePath(false);
+    } else if (op === 'B' || op === 'B*' || op === 'b' || op === 'b*') {
+      finalizePath(true);
+    } else if (op === 'n') {
+      path = [];
+    } else if (op === 'RG') {
+      if (stack.length >= 3) {
+        strokeColor = stack.slice(-3);
+        stack = stack.slice(0, -3);
+      }
+    } else if (op === 'rg') {
+      if (stack.length >= 3) {
+        fillColor = stack.slice(-3);
+        stack = stack.slice(0, -3);
+      }
+    } else if (op === 'G') {
+      if (stack.length) {
+        const g = stack.pop();
+        strokeColor = [g, g, g];
+      }
+    } else if (op === 'g') {
+      if (stack.length) {
+        const g = stack.pop();
+        fillColor = [g, g, g];
+      }
+    } else if (op === 'K' || op === 'k') {
+      if (stack.length >= 4) stack = stack.slice(0, -4);
+    } else if (['w', 'J', 'j', 'M', 'd', 'i', 'ri'].includes(op)) {
+      if (stack.length) stack.pop();
+    } else if (op === 'W' || op === 'W*') {
+      path = [];
+    } else {
+      stack = [];
+    }
+    i++;
+  }
+
+  return { entities, layerMap };
+}
+
+function buildDxf(entities, layerMap, unitCode = 1) {
+  const unitFactors = {
+    1: [25.4 / 72.0, 4],   // mm -> INSUNITS 4
+    4: [2.54 / 72.0, 5],   // cm -> INSUNITS 5
+    6: [0.0254 / 72.0, 6], // m  -> INSUNITS 6
+    2: [1.0 / 72.0, 1],    // in -> INSUNITS 1
+  };
+  const [uf, insunits] = unitFactors[unitCode] || [25.4 / 72.0, 4];
+  const isMetric = [4, 5, 6].includes(insunits) ? 1 : 0;
+
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const ent of entities) {
+    if (ent.type === 'CIRCLE') {
+      const cx = ent.cx * uf, cy = ent.cy * uf, r = ent.r * uf;
+      minX = Math.min(minX, cx - r); maxX = Math.max(maxX, cx + r);
+      minY = Math.min(minY, cy - r); maxY = Math.max(maxY, cy + r);
+    } else if (ent.type === 'POLY') {
+      for (const [px, py] of ent.pts) {
+        const x = px * uf, y = py * uf;
+        minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+        minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+      }
+    }
+  }
+
+  if (!isFinite(minX)) { minX = 0; minY = 0; maxX = 100; maxY = 100; }
+  const width = maxX - minX;
+  const height = maxY - minY;
+  const centerX = (minX + maxX) / 2;
+  const centerY = (minY + maxY) / 2;
+  const viewHeight = Math.max(height, width * 0.75, 10) * 1.2;
+
+  const lines = [];
+  function g(code, val) { lines.push(String(code), String(val)); }
+
+  g(0, 'SECTION'); g(2, 'HEADER');
+  g(9, '$ACADVER'); g(1, 'AC1015');
+  g(9, '$INSUNITS'); g(70, insunits);
+  g(9, '$MEASUREMENT'); g(70, isMetric);
+  g(9, '$EXTMIN'); g(10, minX.toFixed(6)); g(20, minY.toFixed(6)); g(30, '0.000000');
+  g(9, '$EXTMAX'); g(10, maxX.toFixed(6)); g(20, maxY.toFixed(6)); g(30, '0.000000');
+  g(9, '$LIMMIN'); g(10, minX.toFixed(6)); g(20, minY.toFixed(6));
+  g(9, '$LIMMAX'); g(10, maxX.toFixed(6)); g(20, maxY.toFixed(6));
+  g(0, 'ENDSEC');
+
+  g(0, 'SECTION'); g(2, 'CLASSES'); g(0, 'ENDSEC');
+  g(0, 'SECTION'); g(2, 'TABLES');
+
+  g(0, 'TABLE'); g(2, 'VPORT'); g(5, '8'); g(100, 'AcDbSymbolTable'); g(70, 1);
+  g(0, 'VPORT'); g(5, '30'); g(100, 'AcDbSymbolTableRecord'); g(100, 'AcDbViewportTableRecord');
+  g(2, '*ACTIVE'); g(70, 0);
+  g(10, '0.000000'); g(20, '0.000000');
+  g(11, '1.000000'); g(21, '1.000000');
+  g(12, centerX.toFixed(6)); g(22, centerY.toFixed(6));
+  g(40, viewHeight.toFixed(6));
+  g(41, (width > 0 && height > 0 ? width / height : 1.33).toFixed(6));
+  g(0, 'ENDTAB');
+
+  g(0, 'TABLE'); g(2, 'LTYPE'); g(5, '5'); g(100, 'AcDbSymbolTable'); g(70, 1);
+  g(0, 'LTYPE'); g(5, '14'); g(100, 'AcDbSymbolTableRecord'); g(100, 'AcDbLinetypeTableRecord');
+  g(2, 'CONTINUOUS'); g(70, 0); g(3, 'Solid line'); g(72, 65); g(73, 0); g(40, '0.000000');
+  g(0, 'ENDTAB');
+
+  const layerNames = Object.values(layerMap);
+  g(0, 'TABLE'); g(2, 'LAYER'); g(5, '2'); g(100, 'AcDbSymbolTable'); g(70, layerNames.length + 1);
+  g(0, 'LAYER'); g(5, '10'); g(100, 'AcDbSymbolTableRecord'); g(100, 'AcDbLayerTableRecord');
+  g(2, '0'); g(70, 0); g(62, 7); g(6, 'CONTINUOUS');
+  const palette = [1, 2, 3, 4, 5, 6, 7, 30, 40, 50, 70, 80, 100, 120, 140, 160, 180, 200, 220, 240];
+  let hId = 50;
+  for (let idx = 0; idx < layerNames.length; idx++) {
+    hId++;
+    g(0, 'LAYER'); g(5, hId.toString(16).toUpperCase());
+    g(100, 'AcDbSymbolTableRecord'); g(100, 'AcDbLayerTableRecord');
+    g(2, layerNames[idx]); g(70, 0);
+    g(62, palette[idx % palette.length]);
+    g(6, 'CONTINUOUS');
+  }
+  g(0, 'ENDTAB');
+
+  g(0, 'TABLE'); g(2, 'STYLE'); g(5, '3'); g(100, 'AcDbSymbolTable'); g(70, 0); g(0, 'ENDTAB');
+  g(0, 'TABLE'); g(2, 'VIEW'); g(5, '6'); g(100, 'AcDbSymbolTable'); g(70, 0); g(0, 'ENDTAB');
+  g(0, 'TABLE'); g(2, 'UCS'); g(5, '7'); g(100, 'AcDbSymbolTable'); g(70, 0); g(0, 'ENDTAB');
+  g(0, 'TABLE'); g(2, 'APPID'); g(5, '9'); g(100, 'AcDbSymbolTable'); g(70, 1);
+  g(0, 'APPID'); g(5, '12'); g(100, 'AcDbSymbolTableRecord'); g(100, 'AcDbRegAppTableRecord');
+  g(2, 'ACAD'); g(70, 0); g(0, 'ENDTAB');
+  g(0, 'TABLE'); g(2, 'DIMSTYLE'); g(5, 'A'); g(100, 'AcDbSymbolTable'); g(70, 0); g(0, 'ENDTAB');
+
+  g(0, 'TABLE'); g(2, 'BLOCK_RECORD'); g(5, '1'); g(100, 'AcDbSymbolTable'); g(70, 2);
+  g(0, 'BLOCK_RECORD'); g(5, '1F'); g(100, 'AcDbSymbolTableRecord'); g(100, 'AcDbBlockTableRecord'); g(2, '*MODEL_SPACE');
+  g(0, 'BLOCK_RECORD'); g(5, '1E'); g(100, 'AcDbSymbolTableRecord'); g(100, 'AcDbBlockTableRecord'); g(2, '*PAPER_SPACE');
+  g(0, 'ENDTAB');
+  g(0, 'ENDSEC');
+
+  g(0, 'SECTION'); g(2, 'BLOCKS');
+  g(0, 'BLOCK'); g(5, '20'); g(100, 'AcDbEntity'); g(8, '0'); g(100, 'AcDbBlockBegin'); g(2, '*MODEL_SPACE'); g(70, 0); g(10, '0.0'); g(20, '0.0'); g(30, '0.0'); g(3, '*MODEL_SPACE'); g(1, '');
+  g(0, 'ENDBLK'); g(5, '21'); g(100, 'AcDbEntity'); g(8, '0'); g(100, 'AcDbBlockEnd');
+  g(0, 'BLOCK'); g(5, '22'); g(100, 'AcDbEntity'); g(8, '0'); g(100, 'AcDbBlockBegin'); g(2, '*PAPER_SPACE'); g(70, 0); g(10, '0.0'); g(20, '0.0'); g(30, '0.0'); g(3, '*PAPER_SPACE'); g(1, '');
+  g(0, 'ENDBLK'); g(5, '23'); g(100, 'AcDbEntity'); g(8, '0'); g(100, 'AcDbBlockEnd');
+  g(0, 'ENDSEC');
+
+  g(0, 'SECTION'); g(2, 'ENTITIES');
+  let numCircles = 0;
+  let numPolylines = 0;
+
+  for (const ent of entities) {
+    hId++;
+    const hex = hId.toString(16).toUpperCase();
+    if (ent.type === 'CIRCLE') {
+      const cx = (ent.cx * uf).toFixed(6);
+      const cy = (ent.cy * uf).toFixed(6);
+      const r = (ent.r * uf).toFixed(6);
+      g(0, 'CIRCLE'); g(5, hex); g(330, '1F');
+      g(100, 'AcDbEntity'); g(8, ent.layer);
+      g(100, 'AcDbCircle');
+      g(10, cx); g(20, cy); g(30, '0.000000');
+      g(40, r);
+      numCircles++;
+    } else if (ent.type === 'POLY') {
+      const scaled = ent.pts.map(([px, py]) => [px * uf, py * uf]);
+      const clean = [scaled[0]];
+      for (let k = 1; k < scaled.length; k++) {
+        const p = scaled[k];
+        const last = clean[clean.length - 1];
+        if (Math.abs(p[0] - last[0]) > 1e-6 || Math.abs(p[1] - last[1]) > 1e-6) {
+          clean.push(p);
+        }
+      }
+      if (clean.length < 2) continue;
+      g(0, 'LWPOLYLINE'); g(5, hex); g(330, '1F');
+      g(100, 'AcDbEntity'); g(8, ent.layer);
+      g(100, 'AcDbPolyline');
+      g(90, clean.length); g(70, 0); g(43, '0.0');
+      for (const [px, py] of clean) {
+        g(10, px.toFixed(6)); g(20, py.toFixed(6));
+      }
+      numPolylines++;
+    }
+  }
+  g(0, 'ENDSEC');
+
+  g(0, 'SECTION'); g(2, 'OBJECTS');
+  g(0, 'DICTIONARY'); g(5, 'C'); g(330, '0'); g(100, 'AcDbDictionary'); g(281, 1);
+  g(0, 'ENDSEC');
+
+  g(0, 'EOF');
+  return { dxfText: lines.join('\n'), numPolylines, numCircles };
+}
+
+// ─── UI Logic ────────────────────────────────────────────────────────────────
+
+let files = [];
+let tPL = 0, tCI = 0;
+
+const dropZone = document.getElementById('drop');
+['dragenter','dragover'].forEach(ev => dropZone.addEventListener(ev, e => { e.preventDefault(); dropZone.classList.add('over'); }));
+['dragleave','drop'].forEach(ev => dropZone.addEventListener(ev, e => { e.preventDefault(); dropZone.classList.remove('over'); }));
+dropZone.addEventListener('drop', e => onFiles(e.dataTransfer.files));
+
+function onFiles(fl) {
+  Array.from(fl).forEach(f => {
+    if (!f.name.toLowerCase().endsWith('.pdf')) return;
     if (!files.find(x => x.name === f.name && x.size === f.size))
       files.push({ file: f, name: f.name, size: f.size, status: 'w' });
   });
@@ -204,7 +741,7 @@ function upSt(i) { const el = document.getElementById('st' + i); if (el) { el.cl
 function rmFile(i) { files.splice(i, 1); render(); if (!files.length) resetUI(); }
 function clearAll() { files = []; render(); resetUI(); tPL = tCI = 0; }
 function resetUI() {
-  ['opts','acts','prgsec','stats','lp'].forEach(id => document.getElementById(id).style.display = 'none');
+  ['opts','acts','prgsec','stats','tipbox','lp'].forEach(id => document.getElementById(id).style.display = 'none');
   document.getElementById('rlist').innerHTML = '';
   document.getElementById('lbody').innerHTML = '';
 }
@@ -226,53 +763,95 @@ async function convertAll() {
   document.getElementById('prgsec').style.display = 'block';
   document.getElementById('rlist').innerHTML = '';
   document.getElementById('stats').style.display = 'none';
+  document.getElementById('tipbox').style.display = 'none';
   tPL = tCI = 0;
 
-  const unit = document.getElementById('oUnit').value;
-  const scale = document.getElementById('oScale').value;
-  const bezier = document.getElementById('oBez').value;
-  const circle = document.getElementById('oCirc').checked ? 'true' : 'false';
-  const layer = document.getElementById('oLayer').checked ? 'true' : 'false';
+  const unit = parseInt(document.getElementById('oUnit').value, 10);
+  const scale = parseFloat(document.getElementById('oScale').value);
+  const bezier = parseInt(document.getElementById('oBez').value, 10);
+  const circle = document.getElementById('oCirc').checked;
+  const layer = document.getElementById('oLayer').checked;
 
   for (let i = 0; i < files.length; i++) {
     setPrg(i / files.length * 100, 'กำลังแปลง ' + files[i].name + '...');
     files[i].status = 'p'; upSt(i);
+    const startTime = performance.now();
     try {
-      const fd = new FormData();
-      fd.append('pdf', files[i].file, files[i].name);
-      fd.append('unit', unit);
-      fd.append('scale', scale);
-      fd.append('bezier', bezier);
-      fd.append('circle', circle);
-      fd.append('layer', layer);
+      // 1. Try Pure Client-Side Conversion first (Instant, works offline & on all OS)
+      const arrayBuf = await files[i].file.arrayBuffer();
+      const uint8 = new Uint8Array(arrayBuf);
+      const streams = await extractFlateStreams(uint8);
 
-      const resp = await fetch('/api/convert', { method: 'POST', body: fd });
-      const data = await resp.json();
+      let dxfContent, nPoly = 0, nCirc = 0;
 
-      if (!data.success) throw new Error(data.error || 'Unknown error');
+      if (streams && streams.length > 0) {
+        const unified = streams.join('\n');
+        const parsed = parseContentStream(unified, scale, bezier, circle, layer);
+        const result = buildDxf(parsed.entities, parsed.layerMap, unit);
+        dxfContent = result.dxfText;
+        nPoly = result.numPolylines;
+        nCirc = result.numCircles;
+        const dur = ((performance.now() - startTime) / 1000).toFixed(2);
+        log(`✓ ${files[i].name}: แปลงสำเร็จใน ${dur} วินาที (Client Engine)`, 'ok');
+      } else {
+        // Fallback to Serverless API if streams empty
+        throw new Error('No Flate streams, trying server API fallback');
+      }
 
       files[i].status = 'd'; upSt(i);
-      tPL += data.polylines; tCI += data.circles;
-      addResult(data.filename, data.dxf_b64, data.size);
-      log('OK: ' + files[i].name + ' | Polylines:' + data.polylines + ' Circles:' + data.circles, 'ok');
-    } catch(e) {
-      files[i].status = 'e'; upSt(i);
-      log('Error: ' + files[i].name + ': ' + e.message, 'e');
+      tPL += nPoly; tCI += nCirc;
+      const outName = files[i].name.replace(/\.pdf$/i, '.dxf');
+      addResultFromText(outName, dxfContent);
+    } catch(clientErr) {
+      // 2. Fallback to /api/convert (if backend server or Vercel is present)
+      try {
+        log(`กำลังลองสำรองผ่าน API Server: ${clientErr.message}...`, 'w');
+        const fd = new FormData();
+        fd.append('pdf', files[i].file, files[i].name);
+        fd.append('unit', unit);
+        fd.append('scale', scale);
+        fd.append('bezier', bezier);
+        fd.append('circle', circle ? 'true' : 'false');
+        fd.append('layer', layer ? 'true' : 'false');
+
+        const resp = await fetch('/api/convert', { method: 'POST', body: fd });
+        const data = await resp.json();
+        if (!data.success) throw new Error(data.error || 'Server error');
+
+        files[i].status = 'd'; upSt(i);
+        tPL += data.polylines; tCI += data.circles;
+        addResultB64(data.filename, data.dxf_b64, data.size);
+        log(`✓ ${files[i].name}: แปลงสำเร็จผ่าน Server API`, 'ok');
+      } catch(serverErr) {
+        files[i].status = 'e'; upSt(i);
+        log(`✗ Error: ${files[i].name}: ${serverErr.message}`, 'e');
+      }
     }
   }
 
   setPrg(100, 'เสร็จสิ้น!');
   showStats(tPL, tCI);
+  document.getElementById('tipbox').style.display = 'block';
   btn.disabled = false; btn.innerHTML = '&#10024; แปลง PDF &rarr; DXF';
 }
 
-function addResult(name, b64, size) {
+function addResultFromText(name, text) {
+  const blob = new Blob([text], { type: 'application/dxf;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const el = document.createElement('div'); el.className = 'rcard';
+  el.innerHTML = `<div style="font-size:1.8rem">&#128208;</div>
+    <div class="ri"><div class="rn">${name}</div><div class="rm">${fmtB(blob.size)} &bull; AutoCAD Standard (R2000)</div></div>
+    <a class="dlbtn" href="${url}" download="${name}">&#11015; ดาวน์โหลด</a>`;
+  document.getElementById('rlist').appendChild(el);
+}
+
+function addResultB64(name, b64, size) {
   const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
   const blob = new Blob([bytes], { type: 'application/dxf' });
   const url = URL.createObjectURL(blob);
   const el = document.createElement('div'); el.className = 'rcard';
   el.innerHTML = `<div style="font-size:1.8rem">&#128208;</div>
-    <div class="ri"><div class="rn">${name}</div><div class="rm">${fmtB(size)} &bull; AutoCAD Standard DXF</div></div>
+    <div class="ri"><div class="rn">${name}</div><div class="rm">${fmtB(size)} &bull; AutoCAD Standard (R2000)</div></div>
     <a class="dlbtn" href="${url}" download="${name}">&#11015; ดาวน์โหลด</a>`;
   document.getElementById('rlist').appendChild(el);
 }
@@ -281,7 +860,6 @@ function showStats(pl, ci) {
   document.getElementById('stats').style.display = 'flex';
   document.getElementById('stPL').textContent = pl.toLocaleString();
   document.getElementById('stCI').textContent = ci.toLocaleString();
-  // calc total DXF size
   const cards = document.querySelectorAll('.rcard .rm');
   document.getElementById('stSZ').textContent = cards.length > 0 ? cards[0].textContent.split('\u2022')[0].trim() : '0';
 }
