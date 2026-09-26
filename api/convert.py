@@ -463,69 +463,33 @@ def convert_pdf_to_dxf(pdf_bytes, unit_code=1, scale=1.0, bezier_steps=12,
 
     return build_dxf(all_entities, all_layer_map, unit_code)
 
-# ─── HTTP Handler ─────────────────────────────────────────────────────────────
+from http.server import BaseHTTPRequestHandler
+import base64
 
-def get_html():
-    path = os.path.join(DIR, 'index.html')
-    if os.path.exists(path):
-        with open(path, 'rb') as f:
-            return f.read()
-    return b'Not found'
-
-class PDFDXFHandler(http.server.BaseHTTPRequestHandler):
-    def log_message(self, fmt, *args):
-        pass  # suppress request logs
-
-    def do_GET(self):
-        path = self.path.split('?')[0]
-        if path == '/' or path == '/index.html':
-            content = get_html() or b'<h1>index.html not found</h1>'
-            self.send_response(200)
-            self.send_header('Content-Type', 'text/html; charset=utf-8')
-            self.send_header('Content-Length', len(content))
-            self.end_headers()
-            self.wfile.write(content)
-        else:
-            # Serve static files
-            fpath = os.path.join(DIR, path.lstrip('/'))
-            if os.path.exists(fpath) and os.path.isfile(fpath):
-                ext = os.path.splitext(fpath)[1]
-                ct = {'.js': 'application/javascript', '.css': 'text/css',
-                      '.pdf': 'application/pdf'}.get(ext, 'application/octet-stream')
-                with open(fpath, 'rb') as f:
-                    content = f.read()
-                self.send_response(200)
-                self.send_header('Content-Type', ct)
-                self.send_header('Content-Length', len(content))
-                self.end_headers()
-                self.wfile.write(content)
-            else:
-                self.send_error(404)
+class handler(BaseHTTPRequestHandler):
+    def do_OPTIONS(self):
+        self.send_response(200)
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        self.end_headers()
 
     def do_POST(self):
-        if self.path not in ('/convert', '/api/convert'):
-            self.send_error(404)
-            return
-
         try:
-            # Parse multipart form data
             content_type = self.headers.get('Content-Type', '')
+            if 'multipart/form-data' not in content_type:
+                self.send_error(400, 'Expected multipart/form-data')
+                return
+
+            m = re.search(r'boundary=([^\s;]+)', content_type)
+            if not m:
+                self.send_error(400, 'Missing boundary')
+                return
+            boundary = m.group(1).strip('"')
+
             content_length = int(self.headers.get('Content-Length', 0))
             body = self.rfile.read(content_length)
 
-            # Parse params from form
-            boundary = None
-            for part in content_type.split(';'):
-                part = part.strip()
-                if part.startswith('boundary='):
-                    boundary = part[9:].strip()
-                    break
-
-            if not boundary:
-                self.send_error(400, 'No boundary')
-                return
-
-            # Parse multipart
             params = {}
             pdf_data = None
             filename = 'output.pdf'
@@ -535,16 +499,17 @@ class PDFDXFHandler(http.server.BaseHTTPRequestHandler):
                 if b'\r\n\r\n' not in part:
                     continue
                 header_section, _, content = part.partition(b'\r\n\r\n')
-                # Remove trailing \r\n--
-                content = content.rstrip(b'\r\n')
-
+                if content.endswith(b'\r\n'):
+                    content = content[:-2]
+                elif content.endswith(b'\n'):
+                    content = content[:-1]
                 header_str = header_section.decode('utf-8', errors='replace')
+
                 if 'name="pdf"' in header_str:
                     pdf_data = content
-                    # Extract filename
-                    m = re.search(r'filename="([^"]+)"', header_str)
-                    if m:
-                        filename = m.group(1)
+                    fn_match = re.search(r'filename="([^"]+)"', header_str)
+                    if fn_match:
+                        filename = fn_match.group(1)
                 elif 'name="unit"' in header_str:
                     params['unit'] = content.decode().strip()
                 elif 'name="scale"' in header_str:
@@ -560,7 +525,7 @@ class PDFDXFHandler(http.server.BaseHTTPRequestHandler):
                 self.send_error(400, 'No PDF data')
                 return
 
-            unit_code = int(params.get('unit', '4'))
+            unit_code = int(params.get('unit', '1'))
             scale = float(params.get('scale', '1.0'))
             bezier_steps = int(params.get('bezier', '12'))
             do_circle = params.get('circle', 'true') == 'true'
@@ -579,12 +544,13 @@ class PDFDXFHandler(http.server.BaseHTTPRequestHandler):
                 'size': len(dxf_bytes),
                 'polylines': n_poly,
                 'circles': n_circ,
-                'dxf_b64': __import__('base64').b64encode(dxf_bytes).decode()
+                'dxf_b64': base64.b64encode(dxf_bytes).decode()
             })
 
             resp_bytes = resp_json.encode('utf-8')
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
             self.send_header('Content-Length', len(resp_bytes))
             self.end_headers()
             self.wfile.write(resp_bytes)
@@ -595,22 +561,7 @@ class PDFDXFHandler(http.server.BaseHTTPRequestHandler):
             resp = json.dumps({'success': False, 'error': str(e), 'trace': err}).encode()
             self.send_response(500)
             self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
             self.send_header('Content-Length', len(resp))
             self.end_headers()
             self.wfile.write(resp)
-
-
-def open_browser_delayed():
-    time.sleep(1.0)
-    webbrowser.open("http://localhost:" + str(PORT))
-
-if __name__ == '__main__':
-    threading.Thread(target=open_browser_delayed, daemon=True).start()
-    print("PDF to DXF Converter Server")
-    print("URL: http://localhost:" + str(PORT))
-    print("Press Ctrl+C to stop")
-    try:
-        httpd = http.server.HTTPServer(("", PORT), PDFDXFHandler)
-        httpd.serve_forever()
-    except KeyboardInterrupt:
-        print("\nStopped.")

@@ -1,5 +1,11 @@
-﻿__pycache__/
+__pycache__/
 *.pyc
 *.dxf
+*.dwl
+*.dwl2
 *.png
+*.pdf
 .vercel/
+test_*.txt
+test_*.dxf
+pure_*.dxf
