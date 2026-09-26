@@ -445,8 +445,52 @@ def build_dxf(all_entities, layer_map, unit_code):
     doc.write(stream)
     return stream.getvalue(), num_polylines, num_circles
 
+def apply_grid_snap(entities, unit_code, grid_snap, scale=1.0):
+    """Snap circle centers to exact grid pitch (removes PDF floating point noise e.g. 250.03 -> 250.00)."""
+    if grid_snap <= 0.0:
+        return entities
+
+    unit_factors = {
+        1: 25.4 / 72.0,   # mm
+        4: 2.54 / 72.0,   # cm
+        6: 0.0254 / 72.0, # m
+        2: 1.0 / 72.0,    # in
+    }
+    uf = unit_factors.get(int(unit_code), 25.4 / 72.0)
+    step = float(grid_snap) * scale
+
+    circles = [e for e in entities if e[0] == 'CIRCLE']
+    if len(circles) < 3:
+        return entities
+
+    import statistics
+    xs = [c[2] * uf for c in circles]
+    ys = [c[3] * uf for c in circles]
+
+    med_x = statistics.median([x % step for x in xs])
+    med_y = statistics.median([y % step for y in ys])
+    tol = step * 0.25  # Only snap circles close to grid pitch
+
+    new_entities = []
+    for ent in entities:
+        if ent[0] == 'CIRCLE':
+            typ, layer, cx, cy, r = ent
+            x_val = cx * uf
+            y_val = cy * uf
+            sx = med_x + round((x_val - med_x) / step) * step
+            sy = med_y + round((y_val - med_y) / step) * step
+            if abs(x_val - sx) <= tol:
+                x_val = sx
+            if abs(y_val - sy) <= tol:
+                y_val = sy
+            new_entities.append((typ, layer, x_val / uf, y_val / uf, r))
+        else:
+            new_entities.append(ent)
+
+    return new_entities
+
 def convert_pdf_to_dxf(pdf_bytes, unit_code=1, scale=1.0, bezier_steps=12,
-                        do_circle=True, do_layer=True):
+                        do_circle=True, do_layer=True, grid_snap=0.0):
     """Main conversion function."""
     page_h = find_page_height(pdf_bytes)
     streams = extract_flate_streams(pdf_bytes)
@@ -460,6 +504,9 @@ def convert_pdf_to_dxf(pdf_bytes, unit_code=1, scale=1.0, bezier_steps=12,
     all_entities, all_layer_map = parse_content_stream(
         unified_stream, scale, bezier_steps, do_circle, do_layer
     )
+
+    if grid_snap > 0.0:
+        all_entities = apply_grid_snap(all_entities, unit_code, grid_snap, scale)
 
     return build_dxf(all_entities, all_layer_map, unit_code)
 
@@ -555,19 +602,22 @@ class PDFDXFHandler(http.server.BaseHTTPRequestHandler):
                     params['circle'] = content.decode().strip()
                 elif 'name="layer"' in header_str:
                     params['layer'] = content.decode().strip()
+                elif 'name="grid"' in header_str:
+                    params['grid'] = content.decode().strip()
 
             if not pdf_data:
                 self.send_error(400, 'No PDF data')
                 return
 
-            unit_code = int(params.get('unit', '4'))
+            unit_code = int(params.get('unit', '1'))
             scale = float(params.get('scale', '1.0'))
             bezier_steps = int(params.get('bezier', '12'))
             do_circle = params.get('circle', 'true') == 'true'
             do_layer = params.get('layer', 'true') == 'true'
+            grid_snap = float(params.get('grid', '0.0'))
 
             dxf_content, n_poly, n_circ = convert_pdf_to_dxf(
-                pdf_data, unit_code, scale, bezier_steps, do_circle, do_layer
+                pdf_data, unit_code, scale, bezier_steps, do_circle, do_layer, grid_snap
             )
 
             dxf_bytes = dxf_content.encode('utf-8')

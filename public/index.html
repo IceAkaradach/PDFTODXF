@@ -140,6 +140,17 @@
         <input type="number" id="oScale" value="1" min="0.001" max="1000" step="0.01">
       </div>
       <div class="og">
+        <label>จัดระยะเข้ากริด (Grid Snap)</label>
+        <select id="oGrid">
+          <option value="1.25" selected>เปิด: กริด 1.25 mm (ระยะรูเจาะ 250, 125 เป๊ะ)</option>
+          <option value="0">ปิด: ตามต้นฉบับ PDF เดิม</option>
+          <option value="0.1">ปัดเศษ 0.1 mm</option>
+          <option value="0.5">กริด 0.5 mm</option>
+          <option value="1.0">กริด 1.0 mm</option>
+          <option value="2.5">กริด 2.5 mm</option>
+        </select>
+      </div>
+      <div class="og">
         <div class="chkrow">
           <input type="checkbox" id="oCirc" checked>
           <label for="oCirc">ตรวจจับวงกลม (Circle)</label>
@@ -254,6 +265,7 @@ async function convertAll() {
   const bezier = parseInt(document.getElementById('oBez').value, 10);
   const circle = document.getElementById('oCirc').checked;
   const layer = document.getElementById('oLayer').checked;
+  const grid = parseFloat(document.getElementById('oGrid').value);
 
   for (let i = 0; i < files.length; i++) {
     setPrg(i / files.length * 100, 'กำลังแปลง ' + files[i].name + '...');
@@ -266,6 +278,7 @@ async function convertAll() {
       fd.append('bezier', bezier);
       fd.append('circle', circle ? 'true' : 'false');
       fd.append('layer', layer ? 'true' : 'false');
+      fd.append('grid', grid);
 
       // Call Python backend directly (100% ground truth ezdxf conversion)
       let resp = await fetch('/api/convert', { method: 'POST', body: fd }).catch(() => null);
