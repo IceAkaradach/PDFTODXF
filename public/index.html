@@ -270,7 +270,12 @@ async function convertAll() {
       // Call Python backend directly (100% ground truth ezdxf conversion)
       let resp = await fetch('/api/convert', { method: 'POST', body: fd }).catch(() => null);
       if (!resp || !resp.ok) {
-        resp = await fetch('/convert', { method: 'POST', body: fd });
+        resp = await fetch('/convert', { method: 'POST', body: fd }).catch(() => null);
+      }
+      if (!resp) throw new Error('ไม่สามารถเชื่อมต่อ Server ได้');
+      if (!resp.ok) {
+        const errText = await resp.text().catch(() => '');
+        throw new Error(`HTTP ${resp.status}: ${errText.slice(0, 150)}`);
       }
       const data = await resp.json();
       if (!data.success) throw new Error(data.error || 'Server error');
