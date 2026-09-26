@@ -1,122 +1,147 @@
 ;;; ==========================================================================
-;;; AutoLISP: FIX_GRID.LSP - จัดพิกัด Origin (0,0) และล็อกระยะกริดรูเจาะใน AutoCAD
+;;; AutoLISP: FIX_GRID.LSP - ดึงวัตถุและรูเจาะวิ่งเข้าหาเส้นกริด AutoCAD อัตโนมัติ
+;;; 
+;;; ความสามารถ:
+;;;   - อ่านค่า Snap X/Y และ Grid X/Y ที่ผู้ใช้ตั้งไว้ใน Drafting Settings (F9/F7) อัตโนมัติ
+;;;   - ดึงจุดศูนย์กลางของวงกลมรูเจาะทุกวงให้ "วิ่งเข้าไปเกาะเส้นกริด AutoCAD" เป๊ะๆ 100%
+;;;   - รองรับแถวสลับฟันปลา (Staggered) อัตโนมัติ
+;;;
 ;;; วิธีใช้:
 ;;;   1. ลากไฟล์ fix_grid.lsp นี้ไปปล่อยในหน้าต่าง AutoCAD ได้เลย
-;;;   2. พิมพ์คำสั่ง FIXGRID แล้วกด Enter
+;;;   2. พิมพ์คำสั่ง: SNAPGRID หรือพิมพ์สั้นๆ ว่า SG แล้วกด Enter
 ;;; ==========================================================================
 
 (vl-load-com)
 
-(defun c:FIXGRID ( / ssAll ssCirc minPt maxPt bmin bmax ent ed pt cx cy cz
-                     count i step testPt autoStep userStep newX newY optMove)
+(defun c:SNAPGRID ( / *error* acadObj doc snap grid base stepX stepY halfStepX halfStepY 
+                      userStepX userStepY ss count i ent ed pt cx cy cz newX newY 
+                      optStagger baseX baseY selMode)
+  
+  ;; Error handler & Undo Group
+  (defun *error* (msg)
+    (if doc (vla-EndUndoMark doc))
+    (setvar "CMDECHO" 1)
+    (if (and msg (not (wcmatch (strcase msg) "*CANCEL*,*QUIT*,*EXIT*")))
+      (princ (strcat "\n[!] Error: " msg))
+    )
+    (princ)
+  )
+
   (setvar "CMDECHO" 0)
+  (setq acadObj (vlax-get-acad-object))
+  (setq doc (vla-get-ActiveDocument acadObj))
+  (vla-StartUndoMark doc)
+
   (princ "\n==========================================================")
-  (princ "\n   AutoCAD Grid & Pitch Alignment Tool (FIXGRID)")
+  (princ "\n   AutoCAD Snap To Active Grid Tool (SNAPGRID / SG)")
   (princ "\n==========================================================")
 
-  ;; 1. ตรวจสอบวงกลมทั้งหมดในงาน
-  (setq ssCirc (ssget "_X" '((0 . "CIRCLE"))))
-  (if (null ssCirc)
+  ;; 1. อ่านค่า Grid และ Snap Spacing ที่ผู้ใช้ตั้งไว้ใน Drafting Settings (DSETTINGS) ทันที
+  (setq snap (getvar "SNAPUNIT"))
+  (setq grid (getvar "GRIDUNIT"))
+  (setq base (getvar "SNAPBASE"))
+  
+  (setq stepX (car snap))
+  (setq stepY (cadr snap))
+  
+  ;; ถ้าใน Snap เป็น 0 ให้ไปดึงจาก Grid Spacing
+  (if (or (null stepX) (<= stepX 0.0)) (setq stepX (car grid)))
+  (if (or (null stepY) (<= stepY 0.0)) (setq stepY (cadr grid)))
+  
+  ;; ค่าเริ่มต้นสำรอง
+  (if (or (null stepX) (<= stepX 0.0)) (setq stepX 2.5))
+  (if (or (null stepY) (<= stepY 0.0)) (setq stepY 2.5))
+
+  (princ (strcat "\n[+] ตรวจพบการตั้งค่าใน Drafting Settings ของ AutoCAD:"))
+  (princ (strcat "\n    - Grid/Snap X = " (rtos stepX 2 4)))
+  (princ (strcat "\n    - Grid/Snap Y = " (rtos stepY 2 4)))
+
+  ;; 2. ยืนยันระยะ Grid ที่ต้องการใช้งาน
+  (setq userStepX (getreal (strcat "\nกดยืนยันระยะ Grid X [กด Enter เพื่อใช้ค่า " (rtos stepX 2 2) "]: ")))
+  (if userStepX (setq stepX userStepX))
+  
+  (setq userStepY (getreal (strcat "\nกดยืนยันระยะ Grid Y [กด Enter เพื่อใช้ค่า " (rtos stepY 2 2) "]: ")))
+  (if userStepY (setq stepY userStepY))
+
+  ;; 3. โหมดแถวสลับฟันปลา (Staggered Half-Pitch)
+  ;; รูเจาะที่สลับแถวกันจะมีการเยื้องครึ่งระยะ (เช่น Grid 2.5 -> ขยับทีละ 1.25)
+  (initget "Y N")
+  (setq optStagger (getkword "\nแบบมีแถวสลับฟันปลา (Staggered Half-Pitch) หรือไม่? [Yes/No] <Y>: "))
+  (if (or (null optStagger) (= optStagger "Y"))
+    (progn
+      (setq halfStepX (/ stepX 2.0))
+      (setq halfStepY (/ stepY 2.0))
+      (princ (strcat "\n>> โหมดสลับฟันปลา: ดึงวัตถุเข้ากริดหลัก " (rtos stepX 2 2) " และกึ่งกลาง " (rtos halfStepX 2 2)))
+    )
+    (progn
+      (setq halfStepX stepX)
+      (setq halfStepY stepY)
+      (princ (strcat "\n>> โหมดกริดตรง: ดึงวัตถุเข้าเส้นกริด " (rtos stepX 2 2) " x " (rtos stepY 2 2) " ตรงๆ"))
+    )
+  )
+
+  ;; 4. เลือกวัตถุ: ให้เลือกเฉพาะจุด หรือดึงวงกลมทั้งหมดในแบบ
+  (princ "\nเลือกวัตถุที่ต้องการดึงเข้ากริด (กด Enter ทันทีเพื่อดึง 'วงกลมทั้งหมดในแบบ'): ")
+  (setq ss (ssget '((0 . "CIRCLE"))))
+  (if (null ss)
+    (progn
+      (princ "\n>> ดึงวงกลมทั้งหมดในแบบอัตโนมัติ...")
+      (setq ss (ssget "_X" '((0 . "CIRCLE"))))
+    )
+  )
+
+  (if (null ss)
     (progn
       (princ "\n[!] ไม่พบวัตถุ Circle ในแบบนี้")
+      (vla-EndUndoMark doc)
       (setvar "CMDECHO" 1)
       (exit)
     )
   )
-  (setq count (sslength ssCirc))
 
-  ;; 2. Auto-detect หน่วย/สเกลของแบบ (ดูจากพิกัดตัวอย่าง)
-  (setq testPt (cdr (assoc 10 (entget (ssname ssCirc 0)))))
-  ;; ถ้าพิกัดหลักสิบ/หลักร้อยต้นๆ -> สเกล 1:1 mm (ระยะ 1.25 / 2.5)
-  ;; ถ้าพิกัดหลักพัน/หลักหมื่น -> สเกล 100x (ระยะ 125 / 250)
-  (if (> (car testPt) 500.0)
-    (setq autoStep 125.0)
-    (setq autoStep 1.25)
-  )
+  (setq count (sslength ss))
+  (princ (strcat "\nกำลังดึงวงกลม " (itoa count) " วง วิ่งเข้าหาเส้นกริด AutoCAD ที่ตั้งไว้..."))
 
-  ;; 3. ให้ผู้ใช้เลือกหรือยืนยันระยะ Grid Step
-  (princ (strcat "\nตรวจพบสเกลงาน แนะนำ Grid Step: " (rtos autoStep 2 2)))
-  (setq userStep (getreal (strcat "\nระบุ Grid Step ที่ต้องการ [กด Enter เพื่อใช้ " (rtos autoStep 2 2) "]: ")))
-  (if (null userStep) (setq step autoStep) (setq step userStep))
-
-  ;; 4. ถามเรื่องการย้าย Origin ไปที่ (0, 0)
-  (initget "Y N")
-  (setq optMove (getkword "\nต้องการย้ายมุมล่างซ้ายของงานไปที่จุด (0, 0) ด้วยหรือไม่? [Yes/No] <Y>: "))
-  (if (or (null optMove) (= optMove "Y"))
-    (progn
-      (setq ssAll (ssget "_X"))
-      (setq minPt '(1e99 1e99 0.0))
-      (setq i 0)
-      (while (< i (sslength ssAll))
-        (setq ent (ssname ssAll i))
-        (if (vlax-write-enabled-p (vlax-ename->vla-object ent))
-          (progn
-            (vla-getboundingbox (vlax-ename->vla-object ent) 'bmin 'bmax)
-            (setq bmin (vlax-safearray->list bmin))
-            (setq minPt (list (min (car minPt) (car bmin))
-                              (min (cadr minPt) (cadr bmin))
-                              0.0))
-          )
-        )
-        (setq i (1+ i))
-      )
-      ;; ย้ายทุกวัตถุไปที่พิกัด (0, 0)
-      (command "_.MOVE" ssAll "" minPt '(0.0 0.0 0.0))
-      (princ "\n✓ ย้ายมุมล่างซ้ายไปที่ (0, 0, 0) เรียบร้อย")
-    )
-  )
-
-  ;; 5. จัดพิกัดศูนย์กลางวงกลมทุกวงให้ลงตัวตาม Grid Step (กำจัดเศษทศนิยม .03, .15)
-  ;; หาค่า Offset ฐาน เพื่อไม่ให้ตำแหน่งโดยรวมเคลื่อน
-  (setq i 0 sumModX 0.0 sumModY 0.0 sampleCount (min 100 count))
-  (while (< i sampleCount)
-    (setq pt (cdr (assoc 10 (entget (ssname ssCirc i)))))
-    (setq sumModX (+ sumModX (rem (car pt) step)))
-    (setq sumModY (+ sumModY (rem (cadr pt) step)))
-    (setq i (1+ i))
-  )
-  (setq baseOffsetX (/ sumModX sampleCount))
-  (setq baseOffsetY (/ sumModY sampleCount))
-
-  (princ (strcat "\nกำลังประมวลผลวงกลม " (itoa count) " วง..."))
+  ;; 5. วิ่งเข้าหาพิกัดกริด AutoCAD
+  (setq baseX (car base))
+  (setq baseY (cadr base))
   (setq i 0)
   (while (< i count)
-    (setq ent (ssname ssCirc i))
+    (setq ent (ssname ss i))
     (setq ed (entget ent))
     (setq pt (cdr (assoc 10 ed)))
     (setq cx (car pt))
     (setq cy (cadr pt))
     (setq cz (caddr pt))
 
-    ;; คำนวณตำแหน่ง Grid ที่สมบูรณ์แบบ
-    (setq newX (+ baseOffsetX (* (fix (+ (/ (- cx baseOffsetX) step) 0.5)) step)))
-    (setq newY (+ baseOffsetY (* (fix (+ (/ (- cy baseOffsetY) step) 0.5)) step)))
+    ;; ปัดพิกัดเข้าหาตำแหน่งกริด AutoCAD ที่ใกล้ที่สุด
+    (setq newX (+ baseX (* (fix (+ (/ (- cx baseX) halfStepX) (if (>= (- cx baseX) 0.0) 0.5 -0.5))) halfStepX)))
+    (setq newY (+ baseY (* (fix (+ (/ (- cy baseY) halfStepY) (if (>= (- cy baseY) 0.0) 0.5 -0.5))) halfStepY)))
 
-    ;; ปรับค่าพิกัดใน AutoCAD Database ทันที
+    ;; อัปเดตพิกัดลง Entity
     (setq ed (subst (cons 10 (list newX newY cz)) (assoc 10 ed) ed))
     (entmod ed)
 
     (setq i (1+ i))
   )
-  (princ (strcat "\n✓ ล็อกพิกัดวงกลมครบทั้ง " (itoa count) " วงเข้ากริด " (rtos step 2 2) " เรียบร้อย!"))
 
-  ;; 6. ปรับการตั้งค่า AutoCAD ให้รองรับ Grid & Snap
-  (setvar "GRIDUNIT" (list step step))
-  (setvar "SNAPUNIT" (list step step))
+  ;; 6. เปิด Grid (F7) และ Snap (F9) ให้อัตโนมัติ พร้อม Redraw
+  (setvar "SNAPMODE" 1)
   (setvar "GRIDMODE" 1)
-  (command "_.ZOOM" "_E")
+  (command "_.REDRAW")
 
+  (vla-EndUndoMark doc)
   (setvar "CMDECHO" 1)
-  (princ "\n==========================================================")
-  (princ "\n✓ เสร็จสิ้น! ระยะห่างระหว่างรู = เป๊ะตามกริด ไม่มีเศษทศนิยม")
+  (princ (strcat "\n✓ เรียบร้อย! วงกลมทั้ง " (itoa count) " วง วิ่งเข้าเกาะเส้นกริด AutoCAD เป๊ะ 100%!"))
+  (princ "\n(หากต้องการยกเลิก สามารถกด Ctrl+Z เพื่อ Undo ได้ทันที)")
   (princ "\n==========================================================\n")
   (princ)
 )
 
-;; คำสั่งลัด
-(defun c:SNAP250 () (c:FIXGRID))
-(defun c:SG () (c:FIXGRID))
+;; คำสั่งเรียกใช้งาน
+(defun c:SG () (c:SNAPGRID))
+(defun c:FIXGRID () (c:SNAPGRID))
 
-(princ "\n[PDF to DXF] โหลดสคริปต์ AutoLISP เรียบร้อย!")
-(princ "\n>> พิมพ์คำสั่ง FIXGRID หรือ SG แล้วกด Enter เพื่อจัดกริดและพิกัด (0,0)\n")
+(princ "\n[AutoLISP] โหลดสำเร็จ!")
+(princ "\n>> พิมพ์คำสั่ง SG หรือ SNAPGRID แล้วกด Enter เพื่อดึงวัตถุเข้ากริด AutoCAD ทันที\n")
 (princ)
