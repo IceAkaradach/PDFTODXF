@@ -555,119 +555,55 @@ function parseContentStream(text, scale = 1.0, bezierSteps = 12, doCircle = true
 
 function buildDxf(entities, layerMap, unitCode = 1) {
   const unitFactors = {
-    1: [25.4 / 72.0, 4],   // mm -> INSUNITS 4
-    4: [2.54 / 72.0, 5],   // cm -> INSUNITS 5
-    6: [0.0254 / 72.0, 6], // m  -> INSUNITS 6
-    2: [1.0 / 72.0, 1],    // in -> INSUNITS 1
+    1: [25.4 / 72.0, 4],   // mm
+    4: [2.54 / 72.0, 5],   // cm
+    6: [0.0254 / 72.0, 6], // m
+    2: [1.0 / 72.0, 1],    // in
   };
-  const [uf, insunits] = unitFactors[unitCode] || [25.4 / 72.0, 4];
-  const isMetric = [4, 5, 6].includes(insunits) ? 1 : 0;
-
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const ent of entities) {
-    if (ent.type === 'CIRCLE') {
-      const cx = ent.cx * uf, cy = ent.cy * uf, r = ent.r * uf;
-      minX = Math.min(minX, cx - r); maxX = Math.max(maxX, cx + r);
-      minY = Math.min(minY, cy - r); maxY = Math.max(maxY, cy + r);
-    } else if (ent.type === 'POLY') {
-      for (const [px, py] of ent.pts) {
-        const x = px * uf, y = py * uf;
-        minX = Math.min(minX, x); maxX = Math.max(maxX, x);
-        minY = Math.min(minY, y); maxY = Math.max(maxY, y);
-      }
-    }
-  }
-
-  if (!isFinite(minX)) { minX = 0; minY = 0; maxX = 100; maxY = 100; }
-  const width = maxX - minX;
-  const height = maxY - minY;
-  const centerX = (minX + maxX) / 2;
-  const centerY = (minY + maxY) / 2;
-  const viewHeight = Math.max(height, width * 0.75, 10) * 1.2;
+  const [uf] = unitFactors[unitCode] || [25.4 / 72.0, 4];
 
   const lines = [];
   function g(code, val) { lines.push(String(code), String(val)); }
 
+  // HEADER SECTION (AutoCAD Standard R12 - 100% compatible with all CAD versions)
   g(0, 'SECTION'); g(2, 'HEADER');
-  g(9, '$ACADVER'); g(1, 'AC1015');
-  g(9, '$INSUNITS'); g(70, insunits);
-  g(9, '$MEASUREMENT'); g(70, isMetric);
-  g(9, '$EXTMIN'); g(10, minX.toFixed(6)); g(20, minY.toFixed(6)); g(30, '0.000000');
-  g(9, '$EXTMAX'); g(10, maxX.toFixed(6)); g(20, maxY.toFixed(6)); g(30, '0.000000');
-  g(9, '$LIMMIN'); g(10, minX.toFixed(6)); g(20, minY.toFixed(6));
-  g(9, '$LIMMAX'); g(10, maxX.toFixed(6)); g(20, maxY.toFixed(6));
+  g(9, '$ACADVER'); g(1, 'AC1009');
+  g(9, '$MEASUREMENT'); g(70, 1);
   g(0, 'ENDSEC');
 
-  g(0, 'SECTION'); g(2, 'CLASSES'); g(0, 'ENDSEC');
+  // TABLES SECTION
   g(0, 'SECTION'); g(2, 'TABLES');
 
-  g(0, 'TABLE'); g(2, 'VPORT'); g(5, '8'); g(100, 'AcDbSymbolTable'); g(70, 1);
-  g(0, 'VPORT'); g(5, '30'); g(100, 'AcDbSymbolTableRecord'); g(100, 'AcDbViewportTableRecord');
-  g(2, '*ACTIVE'); g(70, 0);
-  g(10, '0.000000'); g(20, '0.000000');
-  g(11, '1.000000'); g(21, '1.000000');
-  g(12, centerX.toFixed(6)); g(22, centerY.toFixed(6));
-  g(40, viewHeight.toFixed(6));
-  g(41, (width > 0 && height > 0 ? width / height : 1.33).toFixed(6));
+  // LTYPE Table
+  g(0, 'TABLE'); g(2, 'LTYPE'); g(70, 1);
+  g(0, 'LTYPE'); g(2, 'CONTINUOUS'); g(70, 0); g(3, 'Solid line'); g(72, 65); g(73, 0); g(40, '0.0');
   g(0, 'ENDTAB');
 
-  g(0, 'TABLE'); g(2, 'LTYPE'); g(5, '5'); g(100, 'AcDbSymbolTable'); g(70, 1);
-  g(0, 'LTYPE'); g(5, '14'); g(100, 'AcDbSymbolTableRecord'); g(100, 'AcDbLinetypeTableRecord');
-  g(2, 'CONTINUOUS'); g(70, 0); g(3, 'Solid line'); g(72, 65); g(73, 0); g(40, '0.000000');
-  g(0, 'ENDTAB');
-
+  // LAYER Table
   const layerNames = Object.values(layerMap);
-  g(0, 'TABLE'); g(2, 'LAYER'); g(5, '2'); g(100, 'AcDbSymbolTable'); g(70, layerNames.length + 1);
-  g(0, 'LAYER'); g(5, '10'); g(100, 'AcDbSymbolTableRecord'); g(100, 'AcDbLayerTableRecord');
-  g(2, '0'); g(70, 0); g(62, 7); g(6, 'CONTINUOUS');
+  g(0, 'TABLE'); g(2, 'LAYER'); g(70, layerNames.length + 1);
+  g(0, 'LAYER'); g(2, '0'); g(70, 0); g(62, 7); g(6, 'CONTINUOUS');
   const palette = [1, 2, 3, 4, 5, 6, 7, 30, 40, 50, 70, 80, 100, 120, 140, 160, 180, 200, 220, 240];
-  let hId = 50;
   for (let idx = 0; idx < layerNames.length; idx++) {
-    hId++;
-    g(0, 'LAYER'); g(5, hId.toString(16).toUpperCase());
-    g(100, 'AcDbSymbolTableRecord'); g(100, 'AcDbLayerTableRecord');
-    g(2, layerNames[idx]); g(70, 0);
+    g(0, 'LAYER'); g(2, layerNames[idx]); g(70, 0);
     g(62, palette[idx % palette.length]);
     g(6, 'CONTINUOUS');
   }
   g(0, 'ENDTAB');
-
-  g(0, 'TABLE'); g(2, 'STYLE'); g(5, '3'); g(100, 'AcDbSymbolTable'); g(70, 0); g(0, 'ENDTAB');
-  g(0, 'TABLE'); g(2, 'VIEW'); g(5, '6'); g(100, 'AcDbSymbolTable'); g(70, 0); g(0, 'ENDTAB');
-  g(0, 'TABLE'); g(2, 'UCS'); g(5, '7'); g(100, 'AcDbSymbolTable'); g(70, 0); g(0, 'ENDTAB');
-  g(0, 'TABLE'); g(2, 'APPID'); g(5, '9'); g(100, 'AcDbSymbolTable'); g(70, 1);
-  g(0, 'APPID'); g(5, '12'); g(100, 'AcDbSymbolTableRecord'); g(100, 'AcDbRegAppTableRecord');
-  g(2, 'ACAD'); g(70, 0); g(0, 'ENDTAB');
-  g(0, 'TABLE'); g(2, 'DIMSTYLE'); g(5, 'A'); g(100, 'AcDbSymbolTable'); g(70, 0); g(0, 'ENDTAB');
-
-  g(0, 'TABLE'); g(2, 'BLOCK_RECORD'); g(5, '1'); g(100, 'AcDbSymbolTable'); g(70, 2);
-  g(0, 'BLOCK_RECORD'); g(5, '1F'); g(100, 'AcDbSymbolTableRecord'); g(100, 'AcDbBlockTableRecord'); g(2, '*MODEL_SPACE');
-  g(0, 'BLOCK_RECORD'); g(5, '1E'); g(100, 'AcDbSymbolTableRecord'); g(100, 'AcDbBlockTableRecord'); g(2, '*PAPER_SPACE');
-  g(0, 'ENDTAB');
   g(0, 'ENDSEC');
 
-  g(0, 'SECTION'); g(2, 'BLOCKS');
-  g(0, 'BLOCK'); g(5, '20'); g(100, 'AcDbEntity'); g(8, '0'); g(100, 'AcDbBlockBegin'); g(2, '*MODEL_SPACE'); g(70, 0); g(10, '0.0'); g(20, '0.0'); g(30, '0.0'); g(3, '*MODEL_SPACE'); g(1, '');
-  g(0, 'ENDBLK'); g(5, '21'); g(100, 'AcDbEntity'); g(8, '0'); g(100, 'AcDbBlockEnd');
-  g(0, 'BLOCK'); g(5, '22'); g(100, 'AcDbEntity'); g(8, '0'); g(100, 'AcDbBlockBegin'); g(2, '*PAPER_SPACE'); g(70, 0); g(10, '0.0'); g(20, '0.0'); g(30, '0.0'); g(3, '*PAPER_SPACE'); g(1, '');
-  g(0, 'ENDBLK'); g(5, '23'); g(100, 'AcDbEntity'); g(8, '0'); g(100, 'AcDbBlockEnd');
-  g(0, 'ENDSEC');
-
+  // ENTITIES SECTION
   g(0, 'SECTION'); g(2, 'ENTITIES');
   let numCircles = 0;
   let numPolylines = 0;
 
   for (const ent of entities) {
-    hId++;
-    const hex = hId.toString(16).toUpperCase();
     if (ent.type === 'CIRCLE') {
       const cx = (ent.cx * uf).toFixed(6);
       const cy = (ent.cy * uf).toFixed(6);
       const r = (ent.r * uf).toFixed(6);
-      g(0, 'CIRCLE'); g(5, hex); g(330, '1F');
-      g(100, 'AcDbEntity'); g(8, ent.layer);
-      g(100, 'AcDbCircle');
-      g(10, cx); g(20, cy); g(30, '0.000000');
+      g(0, 'CIRCLE'); g(8, ent.layer);
+      g(10, cx); g(20, cy); g(30, '0.0');
       g(40, r);
       numCircles++;
     } else if (ent.type === 'POLY') {
@@ -681,23 +617,19 @@ function buildDxf(entities, layerMap, unitCode = 1) {
         }
       }
       if (clean.length < 2) continue;
-      g(0, 'LWPOLYLINE'); g(5, hex); g(330, '1F');
-      g(100, 'AcDbEntity'); g(8, ent.layer);
-      g(100, 'AcDbPolyline');
-      g(90, clean.length); g(70, 0); g(43, '0.0');
+      g(0, 'POLYLINE'); g(8, ent.layer); g(66, 1); g(70, 0);
+      g(10, '0.0'); g(20, '0.0'); g(30, '0.0');
       for (const [px, py] of clean) {
-        g(10, px.toFixed(6)); g(20, py.toFixed(6));
+        g(0, 'VERTEX'); g(8, ent.layer);
+        g(10, px.toFixed(6)); g(20, py.toFixed(6)); g(30, '0.0');
       }
+      g(0, 'SEQEND'); g(8, ent.layer);
       numPolylines++;
     }
   }
   g(0, 'ENDSEC');
-
-  g(0, 'SECTION'); g(2, 'OBJECTS');
-  g(0, 'DICTIONARY'); g(5, 'C'); g(330, '0'); g(100, 'AcDbDictionary'); g(281, 1);
-  g(0, 'ENDSEC');
-
   g(0, 'EOF');
+
   return { dxfText: lines.join('\n'), numPolylines, numCircles };
 }
 
