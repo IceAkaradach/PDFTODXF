@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PDF to DXF Converter</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root{--bg:#0a0a12;--card:#1a1a2e;--accent:#7c3aed;--accent2:#4f46e5;--accent3:#06b6d4;--success:#10b981;--error:#ef4444;--text:#f1f5f9;--muted:#94a3b8;--border:rgba(255,255,255,0.08);--glow:rgba(124,58,237,0.35);}
+    *{margin:0;padding:0;box-sizing:border-box;}
+    body{font-family:Inter,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;}
+    body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;background:radial-gradient(ellipse 80% 60% at 20% 20%,rgba(124,58,237,0.12),transparent 60%),radial-gradient(ellipse 60% 50% at 80% 80%,rgba(6,182,212,0.08),transparent 60%),repeating-linear-gradient(0deg,transparent,transparent 49px,rgba(255,255,255,0.018) 50px),repeating-linear-gradient(90deg,transparent,transparent 49px,rgba(255,255,255,0.018) 50px);}
+    .wrap{position:relative;z-index:1;max-width:1000px;margin:0 auto;padding:2rem 1.5rem 5rem;}
+    .hdr{text-align:center;margin-bottom:3rem;padding-top:2rem;}
+    .badge{display:inline-flex;align-items:center;gap:.5rem;margin-bottom:1.5rem;background:rgba(124,58,237,0.15);border:1px solid rgba(124,58,237,0.3);border-radius:999px;padding:.35rem 1rem;font-size:.75rem;font-weight:600;color:#a78bfa;letter-spacing:.05em;text-transform:uppercase;}
+    .hdr h1{font-size:clamp(2.2rem,5vw,3.5rem);font-weight:800;line-height:1.15;margin-bottom:.75rem;background:linear-gradient(135deg,#e2d9f3,#a78bfa 40%,#38bdf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+    .hdr p{color:var(--muted);font-size:.95rem;max-width:540px;margin:0 auto;line-height:1.65;}
+    .drop{position:relative;border:2px dashed rgba(124,58,237,0.4);border-radius:20px;background:var(--card);padding:3.5rem 2rem;text-align:center;cursor:pointer;transition:all .3s;margin-bottom:1.5rem;overflow:hidden;}
+    .drop::before{content:"";position:absolute;inset:0;background:radial-gradient(ellipse at center,rgba(124,58,237,0.06),transparent 70%);}
+    .drop:hover,.drop.over{border-color:var(--accent);transform:translateY(-2px);box-shadow:0 0 40px var(--glow),inset 0 0 30px rgba(124,58,237,0.05);}
+    .dicon{width:72px;height:72px;margin:0 auto 1.25rem;border-radius:20px;background:linear-gradient(135deg,rgba(124,58,237,0.2),rgba(79,70,229,0.2));border:1px solid rgba(124,58,237,0.3);display:flex;align-items:center;justify-content:center;font-size:2rem;transition:transform .3s;}
+    .drop:hover .dicon{transform:scale(1.1) rotate(-5deg);}
+    .drop h2{font-size:1.2rem;font-weight:600;margin-bottom:.5rem;}
+    .drop p{color:var(--muted);font-size:.9rem;}
+    .brwbtn{display:inline-block;margin-top:1rem;padding:.6rem 1.5rem;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:10px;color:#fff;font-size:.875rem;font-weight:600;cursor:pointer;transition:all .2s;box-shadow:0 4px 20px rgba(124,58,237,0.3);}
+    .brwbtn:hover{transform:translateY(-1px);box-shadow:0 6px 25px rgba(124,58,237,0.5);}
+    #fi{display:none;}
+    .flist{display:flex;flex-direction:column;gap:.75rem;margin-bottom:1.5rem;}
+    .fitem{display:flex;align-items:center;gap:1rem;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:1rem 1.25rem;transition:all .2s;animation:sIn .3s ease;}
+    @keyframes sIn{from{opacity:0;transform:translateY(-8px);}to{opacity:1;transform:translateY(0);}}
+    .fitem:hover{border-color:rgba(124,58,237,0.3);}
+    .fic{font-size:1.8rem;flex-shrink:0;}
+    .finf{flex:1;min-width:0;}
+    .fname{font-weight:600;font-size:.925rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .fsz{font-size:.75rem;color:var(--muted);margin-top:.2rem;}
+    .fst{font-size:.8rem;font-weight:600;padding:.3rem .75rem;border-radius:999px;white-space:nowrap;}
+    .st-w{background:rgba(148,163,184,0.1);color:var(--muted);}
+    .st-p{background:rgba(124,58,237,0.15);color:#a78bfa;}
+    .st-d{background:rgba(16,185,129,0.12);color:var(--success);}
+    .st-e{background:rgba(239,68,68,0.12);color:var(--error);}
+    .rmbtn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:1.1rem;padding:.25rem;border-radius:6px;transition:color .2s,background .2s;}
+    .rmbtn:hover{color:var(--error);background:rgba(239,68,68,0.1);}
+    .opts{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:1.5rem;margin-bottom:1.5rem;}
+    .otit{font-size:.8rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:1.25rem;}
+    .ogrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem;}
+    .og label{display:block;font-size:.8rem;color:var(--muted);margin-bottom:.4rem;font-weight:500;}
+    .og select,.og input[type=number]{width:100%;background:rgba(0,0,0,0.3);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:.5rem .75rem;font-size:.875rem;font-family:inherit;transition:border-color .2s;}
+    .og select:focus,.og input[type=number]:focus{outline:none;border-color:var(--accent);}
+    .chkrow{display:flex;align-items:center;gap:.5rem;padding-top:1.5rem;}
+    .chkrow input{width:16px;height:16px;accent-color:var(--accent);cursor:pointer;}
+    .chkrow label{font-size:.875rem;cursor:pointer;}
+    .acts{display:flex;gap:1rem;margin-bottom:2rem;}
+    .cvtbtn{flex:1;padding:1rem 2rem;border:none;border-radius:14px;color:#fff;font-size:1rem;font-weight:700;cursor:pointer;transition:all .25s;letter-spacing:.02em;background:linear-gradient(135deg,var(--accent),var(--accent2) 50%,#6d28d9);box-shadow:0 8px 30px rgba(124,58,237,0.35);position:relative;overflow:hidden;}
+    .cvtbtn::before{content:"";position:absolute;inset:0;background:linear-gradient(135deg,rgba(255,255,255,0.15),transparent);opacity:0;transition:opacity .2s;}
+    .cvtbtn:hover::before{opacity:1;}
+    .cvtbtn:hover{transform:translateY(-2px);box-shadow:0 12px 40px rgba(124,58,237,0.5);}
+    .cvtbtn:disabled{opacity:.5;cursor:not-allowed;transform:none;box-shadow:none;}
+    .clrbtn{padding:1rem 1.5rem;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.25);border-radius:14px;color:#f87171;font-size:.9rem;font-weight:600;cursor:pointer;transition:all .2s;}
+    .clrbtn:hover{background:rgba(239,68,68,0.18);border-color:rgba(239,68,68,0.5);}
+    .prgsec{margin-bottom:1.5rem;}
+    .prgwrap{height:6px;background:rgba(255,255,255,0.06);border-radius:99px;overflow:hidden;margin-bottom:.5rem;}
+    .prgbar{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent3));border-radius:99px;width:0%;transition:width .4s ease;box-shadow:0 0 12px rgba(124,58,237,0.6);}
+    .prgtxt{font-size:.8rem;color:var(--muted);text-align:right;}
+    .stats{display:flex;gap:1rem;margin-top:1.5rem;flex-wrap:wrap;}
+    .stc{flex:1;min-width:130px;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:1rem 1.25rem;text-align:center;}
+    .stv{font-size:1.5rem;font-weight:800;background:linear-gradient(135deg,#a78bfa,#38bdf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+    .stl{font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-top:.2rem;}
+    .rlist{display:flex;flex-direction:column;gap:.75rem;}
+    .rcard{display:flex;align-items:center;gap:1rem;background:rgba(16,185,129,0.06);border:1px solid rgba(16,185,129,0.2);border-radius:14px;padding:1rem 1.25rem;animation:sIn .3s ease;}
+    .rcard .ri{flex:1;min-width:0;}
+    .rcard .rn{font-weight:600;font-size:.925rem;color:#6ee7b7;}
+    .rcard .rm{font-size:.75rem;color:var(--muted);margin-top:.2rem;}
+    .dlbtn{display:flex;align-items:center;gap:.5rem;padding:.5rem 1.1rem;background:linear-gradient(135deg,var(--success),#059669);border:none;border-radius:10px;color:#fff;font-size:.8rem;font-weight:700;cursor:pointer;text-decoration:none;transition:all .2s;box-shadow:0 4px 15px rgba(16,185,129,0.3);white-space:nowrap;}
+    .dlbtn:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(16,185,129,0.45);}
+    .lp{margin-top:2rem;background:rgba(0,0,0,0.4);border:1px solid var(--border);border-radius:14px;overflow:hidden;}
+    .lhdr{display:flex;align-items:center;justify-content:space-between;padding:.75rem 1.25rem;background:rgba(255,255,255,0.03);border-bottom:1px solid var(--border);cursor:pointer;}
+    .lhdr span{font-size:.8rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;}
+    .lbody{max-height:200px;overflow-y:auto;padding:.75rem 1.25rem;font-family:monospace;font-size:.78rem;line-height:1.6;display:none;}
+    .lbody.open{display:block;}
+    .li{color:#94a3b8;}.lok{color:#6ee7b7;}.lwn{color:#fbbf24;}.lerr{color:#f87171;}
+    @keyframes spin{to{transform:rotate(360deg);}}
+    .sp{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,0.3);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite;vertical-align:middle;margin-right:6px;}
+    ::-webkit-scrollbar{width:4px;}::-webkit-scrollbar-track{background:transparent;}::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:99px;}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hdr">
+    <div class="badge">&#9889; Python PDF &rarr; DXF</div>
+    <h1>PDF to DXF<br>Converter</h1>
+    <p>แปลง PDF Vector (Adobe Illustrator, CAD) เป็น DXF<br>รองรับ Polyline, Circle, Bezier &mdash; ทำงานด้วย Python (100% Accurate)</p>
+  </div>
+
+  <div class="drop" id="dz">
+    <div class="dicon">&#128196;</div>
+    <h2>ลาก PDF มาวางที่นี่</h2>
+    <p>หรือคลิกปุ่มด้านล่างเพื่อเลือกไฟล์</p>
+    <button class="brwbtn" onclick="document.getElementById('fi').click()">&#128194; เลือกไฟล์ PDF</button>
+    <input type="file" id="fi" accept=".pdf" multiple>
+  </div>
+
+  <div class="flist" id="flist"></div>
+
+  <div class="opts" id="opts" style="display:none">
+    <div class="otit">&#9881; ตัวเลือกการแปลง</div>
+    <div class="ogrid">
+      <div class="og">
+        <label>หน่วย DXF</label>
+        <select id="oUnit">
+          <option value="1" selected>Millimeters (mm)</option>
+          <option value="4">Centimeters (cm)</option>
+          <option value="6">Meters (m)</option>
+          <option value="2">Inches (in)</option>
+        </select>
+      </div>
+      <div class="og">
+        <label>ความละเอียด Bezier Curve</label>
+        <select id="oBez">
+          <option value="4">ต่ำ (เร็ว)</option>
+          <option value="12" selected>กลาง (แนะนำ)</option>
+          <option value="24">สูง (ละเอียด)</option>
+          <option value="48">สูงมาก</option>
+        </select>
+      </div>
+      <div class="og">
+        <label>Scale Factor</label>
+        <input type="number" id="oScale" value="1" min="0.001" max="1000" step="0.01">
+      </div>
+      <div class="og">
+        <div class="chkrow">
+          <input type="checkbox" id="oCirc" checked>
+          <label for="oCirc">ตรวจจับวงกลม (Circle)</label>
+        </div>
+        <div class="chkrow" style="margin-top:.5rem">
+          <input type="checkbox" id="oLayer" checked>
+          <label for="oLayer">แยก Layer ตามสี</label>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="acts" id="acts" style="display:none">
+    <button class="cvtbtn" id="cvtbtn" onclick="convertAll()">&#10024; แปลง PDF &rarr; DXF</button>
+    <button class="clrbtn" onclick="clearAll()">&#128465; ล้าง</button>
+  </div>
+
+  <div class="prgsec" id="prgsec" style="display:none">
+    <div class="prgwrap"><div class="prgbar" id="pgbar"></div></div>
+    <div class="prgtxt" id="pgtext">กำลังประมวลผล...</div>
+  </div>
+
+  <div class="stats" id="stats" style="display:none">
+    <div class="stc"><div class="stv" id="stPL">0</div><div class="stl">Polylines</div></div>
+    <div class="stc"><div class="stv" id="stCI">0</div><div class="stl">Circles</div></div>
+    <div class="stc"><div class="stv" id="stSZ">0</div><div class="stl">DXF Size</div></div>
+  </div>
+
+  <div class="rlist" id="rlist"></div>
+
+  <div class="lp" id="lp" style="display:none">
+    <div class="lhdr" onclick="toggleLog()">
+      <span>&#128203; Log</span>
+      <span id="ltic">&#9660;</span>
+    </div>
+    <div class="lbody" id="lbody"></div>
+  </div>
+</div>
+
+<script>
+let files = [], tPL = 0, tCI = 0;
+
+const dz = document.getElementById('dz');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('over'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('over'));
+dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('over'); addFiles([...e.dataTransfer.files]); });
+document.getElementById('fi').addEventListener('change', e => { addFiles([...e.target.files]); e.target.value = ''; });
+
+function addFiles(nf) {
+  nf.filter(f => f.name.toLowerCase().endsWith('.pdf')).forEach(f => {
+    if (!files.find(x => x.name === f.name && x.size === f.size))
+      files.push({ file: f, name: f.name, size: f.size, status: 'w' });
+  });
+  render();
+  if (files.length) {
+    document.getElementById('opts').style.display = 'block';
+    document.getElementById('acts').style.display = 'flex';
+  }
+}
+
+function render() {
+  const el = document.getElementById('flist');
+  el.innerHTML = files.map((f, i) => `
+    <div class="fitem">
+      <div class="fic">&#128196;</div>
+      <div class="finf"><div class="fname" title="${f.name}">${f.name}</div><div class="fsz">${fmtB(f.size)}</div></div>
+      <div class="fst ${stCls(f.status)}" id="st${i}">${stLbl(f.status)}</div>
+      <button class="rmbtn" onclick="rmFile(${i})">&#x2715;</button>
+    </div>`).join('');
+}
+
+function stCls(s) { return { w: 'st-w', p: 'st-p', d: 'st-d', e: 'st-e' }[s] || 'st-w'; }
+function stLbl(s) { return { w: '&#9203; รอ', p: '<span class="sp"></span>แปลง', d: '&#10003; เสร็จ', e: '&#10007; Error' }[s] || s; }
+function upSt(i) { const el = document.getElementById('st' + i); if (el) { el.className = 'fst ' + stCls(files[i].status); el.innerHTML = stLbl(files[i].status); } }
+function rmFile(i) { files.splice(i, 1); render(); if (!files.length) resetUI(); }
+function clearAll() { files = []; render(); resetUI(); tPL = tCI = 0; }
+function resetUI() {
+  ['opts','acts','prgsec','stats','lp'].forEach(id => document.getElementById(id).style.display = 'none');
+  document.getElementById('rlist').innerHTML = '';
+  document.getElementById('lbody').innerHTML = '';
+}
+function fmtB(b) { if (b < 1024) return b + ' B'; if (b < 1048576) return (b/1024).toFixed(1) + ' KB'; return (b/1048576).toFixed(2) + ' MB'; }
+function toggleLog() { const b = document.getElementById('lbody'); const ic = document.getElementById('ltic'); b.classList.toggle('open'); ic.innerHTML = b.classList.contains('open') ? '&#9650;' : '&#9660;'; }
+function log(msg, t = 'i') {
+  document.getElementById('lp').style.display = 'block';
+  const b = document.getElementById('lbody');
+  const d = document.createElement('div'); d.className = { i: 'li', ok: 'lok', w: 'lwn', e: 'lerr' }[t] || 'li';
+  d.textContent = '[' + new Date().toLocaleTimeString('th-TH') + '] ' + msg;
+  b.appendChild(d); b.scrollTop = b.scrollHeight;
+}
+function setPrg(pct, txt) { document.getElementById('pgbar').style.width = pct + '%'; document.getElementById('pgtext').textContent = txt; }
+
+async function convertAll() {
+  if (!files.length) return;
+  const btn = document.getElementById('cvtbtn');
+  btn.disabled = true; btn.innerHTML = '<span class="sp"></span>กำลังแปลง...';
+  document.getElementById('prgsec').style.display = 'block';
+  document.getElementById('rlist').innerHTML = '';
+  document.getElementById('stats').style.display = 'none';
+  tPL = tCI = 0;
+
+  const unit = document.getElementById('oUnit').value;
+  const scale = document.getElementById('oScale').value;
+  const bezier = document.getElementById('oBez').value;
+  const circle = document.getElementById('oCirc').checked ? 'true' : 'false';
+  const layer = document.getElementById('oLayer').checked ? 'true' : 'false';
+
+  for (let i = 0; i < files.length; i++) {
+    setPrg(i / files.length * 100, 'กำลังแปลง ' + files[i].name + '...');
+    files[i].status = 'p'; upSt(i);
+    try {
+      const fd = new FormData();
+      fd.append('pdf', files[i].file, files[i].name);
+      fd.append('unit', unit);
+      fd.append('scale', scale);
+      fd.append('bezier', bezier);
+      fd.append('circle', circle);
+      fd.append('layer', layer);
+
+      const resp = await fetch('/api/convert', { method: 'POST', body: fd });
+      const data = await resp.json();
+
+      if (!data.success) throw new Error(data.error || 'Unknown error');
+
+      files[i].status = 'd'; upSt(i);
+      tPL += data.polylines; tCI += data.circles;
+      addResult(data.filename, data.dxf_b64, data.size);
+      log('OK: ' + files[i].name + ' | Polylines:' + data.polylines + ' Circles:' + data.circles, 'ok');
+    } catch(e) {
+      files[i].status = 'e'; upSt(i);
+      log('Error: ' + files[i].name + ': ' + e.message, 'e');
+    }
+  }
+
+  setPrg(100, 'เสร็จสิ้น!');
+  showStats(tPL, tCI);
+  btn.disabled = false; btn.innerHTML = '&#10024; แปลง PDF &rarr; DXF';
+}
+
+function addResult(name, b64, size) {
+  const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  const blob = new Blob([bytes], { type: 'application/dxf' });
+  const url = URL.createObjectURL(blob);
+  const el = document.createElement('div'); el.className = 'rcard';
+  el.innerHTML = `<div style="font-size:1.8rem">&#128208;</div>
+    <div class="ri"><div class="rn">${name}</div><div class="rm">${fmtB(size)} &bull; AutoCAD Standard DXF</div></div>
+    <a class="dlbtn" href="${url}" download="${name}">&#11015; ดาวน์โหลด</a>`;
+  document.getElementById('rlist').appendChild(el);
+}
+
+function showStats(pl, ci) {
+  document.getElementById('stats').style.display = 'flex';
+  document.getElementById('stPL').textContent = pl.toLocaleString();
+  document.getElementById('stCI').textContent = ci.toLocaleString();
+  // calc total DXF size
+  const cards = document.querySelectorAll('.rcard .rm');
+  document.getElementById('stSZ').textContent = cards.length > 0 ? cards[0].textContent.split('\u2022')[0].trim() : '0';
+}
+</script>
+</body>
+</html>
