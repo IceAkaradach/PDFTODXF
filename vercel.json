@@ -1,5 +1,3 @@
 ﻿{
-  "rewrites": [
-    { "source": "/convert", "destination": "/api/convert" }
-  ]
+  "cleanUrls": true
 }
