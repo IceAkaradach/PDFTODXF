@@ -63,20 +63,21 @@
   (setq userStepY (getreal (strcat "\nกดยืนยันระยะ Grid Y [กด Enter เพื่อใช้ค่า " (rtos stepY 2 2) "]: ")))
   (if userStepY (setq stepY userStepY))
 
-  ;; 3. โหมดแถวสลับฟันปลา (Staggered Half-Pitch)
-  ;; รูเจาะที่สลับแถวกันจะมีการเยื้องครึ่งระยะ (เช่น Grid 2.5 -> ขยับทีละ 1.25)
-  (initget "Y N")
-  (setq optStagger (getkword "\nแบบมีแถวสลับฟันปลา (Staggered Half-Pitch) หรือไม่? [Yes/No] <Y>: "))
-  (if (or (null optStagger) (= optStagger "Y"))
-    (progn
-      (setq halfStepX (/ stepX 2.0))
-      (setq halfStepY (/ stepY 2.0))
-      (princ (strcat "\n>> โหมดสลับฟันปลา: ดึงวัตถุเข้ากริดหลัก " (rtos stepX 2 2) " และกึ่งกลาง " (rtos halfStepX 2 2)))
-    )
+  ;; 3. โหมดการ Snap เข้ากริด
+  ;; ค่าเริ่มต้น [1]: วิ่งเข้าเส้นกริด AutoCAD ตามที่ตั้งไว้ตรงๆ (เช่น 2.5 x 2.5) แนะนำ
+  ;; ตัวเลือก [2]: หารครึ่งกริด (Half-Pitch เช่น 1.25) กรณีต้องการพิกัดกึ่งกลางกริด
+  (initget "1 2 E H")
+  (setq optMode (getkword "\nเลือกโหมดการ Snap [1=ตรงตามเส้นกริด AutoCAD / 2=หารครึ่ง Half-Pitch] <1>: "))
+  (if (or (null optMode) (= optMode "1") (= optMode "E"))
     (progn
       (setq halfStepX stepX)
       (setq halfStepY stepY)
-      (princ (strcat "\n>> โหมดกริดตรง: ดึงวัตถุเข้าเส้นกริด " (rtos stepX 2 2) " x " (rtos stepY 2 2) " ตรงๆ"))
+      (princ (strcat "\n>> โหมดกริดตรง: ดึงรูเจาะเข้าเส้นกริด AutoCAD " (rtos stepX 2 2) " x " (rtos stepY 2 2) " เป๊ะๆ 100%"))
+    )
+    (progn
+      (setq halfStepX (/ stepX 2.0))
+      (setq halfStepY (/ stepY 2.0))
+      (princ (strcat "\n>> โหมดหารครึ่ง: อนุญาตพิกัดลงกริดหลัก " (rtos stepX 2 2) " และกึ่งกลาง " (rtos halfStepX 2 2)))
     )
   )
 
